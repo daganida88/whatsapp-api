@@ -59,13 +59,15 @@ const clientIdSchema = Joi.string()
 
 const textMessageSchema = Joi.object({
   phone: phoneSchema,
-  message: Joi.string().min(1).max(4096).required()
+  message: Joi.string().min(1).max(4096).required(),
+  message_id_to_reply: Joi.string().optional()
 });
 
 const mediaMessageSchema = Joi.object({
   phone: phoneSchema,
   media: Joi.string().uri().required(),
-  caption: Joi.string().min(1).max(4096).required()
+  caption: Joi.string().min(1).max(4096).optional(),
+  message_id_to_reply: Joi.string().optional()
 });
 
 // Middleware to validate request body
@@ -299,13 +301,19 @@ router.get('/sessions/:clientId/chats', async (req, res) => {
 // Send text message
 router.post('/send-text', authenticateAPI, validateBody(textMessageSchema), validateSession, async (req, res) => {
   try {
-    const { phone, message } = req.body;
+    const { phone, message, message_id_to_reply } = req.body;
     const client = req.client;
     
     // Format phone number
     const chatId = phone.includes('@') ? phone : `${phone}@c.us`;
     
-    const result = await client.sendMessage(chatId, message);
+    // Prepare options for reply
+    const options = {};
+    if (message_id_to_reply) {
+      options.quotedMessageId = message_id_to_reply;
+    }
+    
+    const result = await client.sendMessage(chatId, message, options);
     
     res.json({
       success: true,
@@ -313,7 +321,8 @@ router.post('/send-text', authenticateAPI, validateBody(textMessageSchema), vali
       timestamp: new Date().toISOString(),
       data: {
         phone,
-        message: message.substring(0, 100) + (message.length > 100 ? '...' : '')
+        message: message.substring(0, 100) + (message.length > 100 ? '...' : ''),
+        replyTo: message_id_to_reply || null
       }
     });
   } catch (error) {
@@ -330,10 +339,10 @@ router.post('/send-text', authenticateAPI, validateBody(textMessageSchema), vali
 router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), validateSession, async (req, res) => {
   try {
     console.log(`[SEND-MEDIA] Starting send media request`);
-    const { phone, media, caption } = req.body;
+    const { phone, media, caption, message_id_to_reply } = req.body;
     const client = req.client;
     
-    console.log(`[SEND-MEDIA] Phone: ${phone}, Media: ${media}, Caption: ${caption}`);
+    console.log(`[SEND-MEDIA] Phone: ${phone}, Media: ${media}, Caption: ${caption}, ReplyTo: ${message_id_to_reply}`);
     
     if (!media || !media.startsWith('http')) {
       console.log(`[SEND-MEDIA] Invalid media URL: ${media}`);
@@ -352,7 +361,14 @@ router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), va
     const mediaObj = await MessageMedia.fromUrl(media, { unsafeMime: true });
     console.log(`[SEND-MEDIA] Media fetched successfully, type: ${mediaObj.mimetype}`);
     
-    const options = caption ? { caption } : {};
+    // Prepare options for caption and reply
+    const options = {};
+    if (caption) {
+      options.caption = caption;
+    }
+    if (message_id_to_reply) {
+      options.quotedMessageId = message_id_to_reply;
+    }
     console.log(`[SEND-MEDIA] Sending message with options:`, options);
     
     const result = await client.sendMessage(chatId, mediaObj, options);
@@ -365,7 +381,8 @@ router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), va
       data: {
         phone: chatId,
         caption: caption || '',
-        mediaUrl: media
+        mediaUrl: media,
+        replyTo: message_id_to_reply || null
       }
     });
     
