@@ -5,6 +5,26 @@ const { MessageMedia } = require('whatsapp-web.js');
 
 const router = express.Router();
 
+// API Key from environment
+const API_KEY = process.env.API_KEY || 'your-secret-api-key';
+
+// Authentication middleware
+const authenticateAPI = (req, res, next) => {
+    console.log(`[AUTH] Checking API key for ${req.method} ${req.path}`);
+    const providedKey = req.headers['x-api-key'] || req.query.api_key;
+    
+    if (!providedKey || providedKey !== API_KEY) {
+        console.log(`[AUTH] Failed - Provided: ${providedKey}, Expected: ${API_KEY}`);
+        return res.status(401).json({ 
+            error: 'Unauthorized', 
+            message: 'Valid API key required' 
+        });
+    }
+    
+    console.log(`[AUTH] Success - API key validated`);
+    next();
+};
+
 // Configure multer for file uploads
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -44,6 +64,9 @@ const textMessageSchema = Joi.object({
 
 const mediaMessageSchema = Joi.object({
   phone: phoneSchema,
+  media: Joi.string().uri().optional(),
+  image: Joi.string().optional(),
+  video: Joi.string().optional(),
   caption: Joi.string().max(1024).optional(),
   filename: Joi.string().max(255).optional()
 });
@@ -51,15 +74,19 @@ const mediaMessageSchema = Joi.object({
 // Middleware to validate request body
 const validateBody = (schema) => {
   return (req, res, next) => {
+    console.log(`[VALIDATION] Validating request body:`, JSON.stringify(req.body, null, 2));
     const { error } = schema.validate(req.body);
     if (error) {
+      console.log(`[VALIDATION] Failed:`, error.details);
       return res.status(400).json({
         error: true,
         message: 'Validation error',
         details: error.details.map(d => d.message),
+        requestBody: req.body,
         timestamp: new Date().toISOString()
       });
     }
+    console.log(`[VALIDATION] Success - Request body validated`);
     next();
   };
 };
@@ -67,13 +94,17 @@ const validateBody = (schema) => {
 // Middleware to validate client session
 const validateSession = async (req, res, next) => {
   try {
+    console.log(`[SESSION] Validating client session`);
     const client = req.client;
     const clientReady = req.clientReady;
+    
+    console.log(`[SESSION] Client ready: ${clientReady}, Has info: ${!!client?.info}`);
     
     // Use same logic as /api/sessions endpoint
     const isReady = clientReady && client.info ? true : false;
     
     if (!client || !isReady) {
+      console.log(`[SESSION] Validation failed - Client not ready`);
       return res.status(400).json({
         error: true,
         message: 'Client is not ready',
@@ -83,8 +114,10 @@ const validateSession = async (req, res, next) => {
       });
     }
     
+    console.log(`[SESSION] Success - Client is ready`);
     next();
   } catch (error) {
+    console.error(`[SESSION] Error validating session:`, error);
     res.status(500).json({
       error: true,
       message: 'Error validating session',
@@ -97,7 +130,7 @@ const validateSession = async (req, res, next) => {
 // Session Management Routes
 
 // Initialize a new session (single client - always ready)
-router.post('/sessions/:clientId/initialize', async (req, res) => {
+router.post('/sessions/:clientId/initialize', authenticateAPI, async (req, res) => {
   try {
     res.json({
       success: true,
@@ -158,7 +191,7 @@ router.get('/sessions/:clientId/status', (req, res) => {
 });
 
 // Logout and destroy session (not recommended for single client)
-router.post('/sessions/:clientId/logout', async (req, res) => {
+router.post('/sessions/:clientId/logout', authenticateAPI, async (req, res) => {
   try {
     res.status(400).json({
       error: true,
@@ -267,7 +300,7 @@ router.get('/sessions/:clientId/chats', async (req, res) => {
 // Message Routes
 
 // Send text message
-router.post('/send-text', validateBody(textMessageSchema), validateSession, async (req, res) => {
+router.post('/send-text', authenticateAPI, validateBody(textMessageSchema), validateSession, async (req, res) => {
   try {
     const { phone, message } = req.body;
     const client = req.client;
@@ -296,10 +329,65 @@ router.post('/send-text', validateBody(textMessageSchema), validateSession, asyn
   }
 });
 
-// Send image
-router.post('/send-image', upload.single('image'), validateBody(mediaMessageSchema), validateSession, async (req, res) => {
+// Send media (URL only)
+router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), validateSession, async (req, res) => {
   try {
-    const { clientId, phone, caption, filename } = req.body;
+    console.log(`[SEND-MEDIA] Starting send media request`);
+    const { phone, media, caption } = req.body;
+    const client = req.client;
+    
+    console.log(`[SEND-MEDIA] Phone: ${phone}, Media: ${media}, Caption: ${caption}`);
+    
+    if (!media || !media.startsWith('http')) {
+      console.log(`[SEND-MEDIA] Invalid media URL: ${media}`);
+      return res.status(400).json({
+        error: true,
+        message: 'Media URL is required and must start with http',
+        providedMedia: media,
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const chatId = phone.includes('@') ? phone : `${phone}@c.us`;
+    console.log(`[SEND-MEDIA] Formatted chat ID: ${chatId}`);
+    
+    console.log(`[SEND-MEDIA] Fetching media from URL: ${media}`);
+    const mediaObj = await MessageMedia.fromUrl(media, { unsafeMime: true });
+    console.log(`[SEND-MEDIA] Media fetched successfully, type: ${mediaObj.mimetype}`);
+    
+    const options = caption ? { caption } : {};
+    console.log(`[SEND-MEDIA] Sending message with options:`, options);
+    
+    const result = await client.sendMessage(chatId, mediaObj, options);
+    console.log(`[SEND-MEDIA] Message sent successfully, ID: ${result.id._serialized}`);
+    
+    res.json({
+      success: true,
+      messageId: result.id._serialized,
+      timestamp: new Date().toISOString(),
+      data: {
+        phone: chatId,
+        caption: caption || '',
+        mediaUrl: media
+      }
+    });
+    
+  } catch (error) {
+    console.error(`[SEND-MEDIA] Error:`, error);
+    res.status(500).json({
+      error: true,
+      message: 'Failed to send media',
+      details: error.message,
+      errorStack: error.stack,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Send image (legacy - redirects to send-media)
+router.post('/send-image', authenticateAPI, upload.single('image'), validateBody(mediaMessageSchema), validateSession, async (req, res) => {
+  try {
+    const { phone, caption, filename } = req.body;
     const client = req.client;
     
     let media;
@@ -339,7 +427,6 @@ router.post('/send-image', upload.single('image'), validateBody(mediaMessageSche
       messageId: result.id._serialized,
       timestamp: new Date().toISOString(),
       data: {
-        clientId,
         phone,
         caption: caption || '',
         filename: media.filename
@@ -355,10 +442,10 @@ router.post('/send-image', upload.single('image'), validateBody(mediaMessageSche
   }
 });
 
-// Send video
-router.post('/send-video', upload.single('video'), validateBody(mediaMessageSchema), validateSession, async (req, res) => {
+// Send video (legacy - use send-media instead)
+router.post('/send-video', authenticateAPI, upload.single('video'), validateBody(mediaMessageSchema), validateSession, async (req, res) => {
   try {
-    const { clientId, phone, caption, filename } = req.body;
+    const { phone, caption, filename } = req.body;
     const client = req.client;
     
     let media;
@@ -398,7 +485,6 @@ router.post('/send-video', upload.single('video'), validateBody(mediaMessageSche
       messageId: result.id._serialized,
       timestamp: new Date().toISOString(),
       data: {
-        clientId,
         phone,
         caption: caption || '',
         filename: media.filename
@@ -415,7 +501,7 @@ router.post('/send-video', upload.single('video'), validateBody(mediaMessageSche
 });
 
 // Forward message endpoint
-router.post('/forward-message', async (req, res) => {
+router.post('/forward-message', authenticateAPI, async (req, res) => {
   try {
     const { messageId, toChatId } = req.body;
     
