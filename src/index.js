@@ -34,7 +34,7 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Initialize Session Manager
 // Simple WhatsApp client setup - like code sample
-const client = new Client({
+const clientConfig = {
     authStrategy: new LocalAuth({
         dataPath: '/app/session_data'
     }),
@@ -58,7 +58,17 @@ const client = new Client({
         ],
         executablePath: process.env.CHROME_BIN || '/usr/bin/chromium-browser'
     }
-});
+};
+
+if (process.env.PROXY_SERVER && process.env.PROXY_USERNAME && process.env.PROXY_PASSWORD) {
+    clientConfig.proxyAuthentication = { 
+        username: process.env.PROXY_USERNAME, 
+        password: process.env.PROXY_PASSWORD 
+    };
+    clientConfig.puppeteer.args.push(`--proxy-server=${process.env.PROXY_SERVER}`);
+}
+
+const client = new Client(clientConfig);
 
 let clientReady = false;
 
