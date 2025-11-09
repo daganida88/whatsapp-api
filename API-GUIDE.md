@@ -77,9 +77,9 @@ curl -X POST http://localhost:3001/api/send-text \
 }
 ```
 
-## 2. Send Media Message (URL Only)
+## 2. Send Media Message
 
-Send media (images, videos, documents) from a URL with optional caption.
+Send any media (images, videos, documents, audio) from a URL with caption.
 
 ### Endpoint
 ```
@@ -91,76 +91,39 @@ POST /api/send-media
 {
   "phone": "CHAT_ID",
   "media": "https://example.com/media-url",
-  "caption": "Optional caption"
+  "caption": "Required caption (1-4096 characters)"
 }
 ```
 
-### Example
+### Supported Media Types
+- **Images**: JPG, PNG, GIF, WEBP
+- **Videos**: MP4, AVI, MOV, WEBM
+- **Documents**: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX
+- **Audio**: MP3, OGG, WAV, AAC
+
+### Examples
+
+**Send image:**
 ```bash
 curl -X POST http://localhost:3001/api/send-media \
   -H "Content-Type: application/json" \
   -H "X-API-Key: your-secret-api-key" \
   -d '{
     "phone": "1234567890@c.us",
-    "media": "https://example.com/image.jpg",
+    "media": "https://picsum.photos/350/150",
     "caption": "Check out this image!"
   }'
 ```
 
-### Response
-```json
-{
-  "success": true,
-  "messageId": "true_1234567890@c.us_3EB06D9D3CD7DA0AA28EDD_12425357213926@lid",
-  "timestamp": "2025-11-09T13:25:11.703Z",
-  "data": {
-    "phone": "1234567890@c.us",
-    "caption": "Check out this image!",
-    "mediaUrl": "https://example.com/image.jpg"
-  }
-}
-```
-
-## 3. Send Media Message (Image - Legacy)
-
-Send an image with optional caption.
-
-### Endpoint
-```
-POST /api/send-image
-```
-
-### Request Methods
-
-#### Method A: File Upload
+**Send video:**
 ```bash
-curl -X POST http://localhost:3001/api/send-image \
-  -F "image=@/path/to/your/image.jpg" \
-  -F "phone=1234567890@c.us" \
-  -F "caption=Check out this image!" \
-  -F "filename=my-image.jpg"
-```
-
-#### Method B: Base64 Encoded Image
-```bash
-curl -X POST http://localhost:3001/api/send-image \
+curl -X POST http://localhost:3001/api/send-media \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-api-key" \
   -d '{
-    "phone": "1234567890@c.us",
-    "image": "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAAAQ...",
-    "caption": "Image sent via base64",
-    "filename": "image.jpg"
-  }'
-```
-
-#### Method C: Image URL
-```bash
-curl -X POST http://localhost:3001/api/send-image \
-  -H "Content-Type: application/json" \
-  -d '{
-    "phone": "1234567890@c.us",
-    "image": "https://example.com/image.jpg",
-    "caption": "Image from URL"
+    "phone": "120363400200314986@g.us",
+    "media": "https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4",
+    "caption": "🎬 Check out this video!"
   }'
 ```
 
@@ -173,43 +136,12 @@ curl -X POST http://localhost:3001/api/send-image \
   "data": {
     "phone": "1234567890@c.us",
     "caption": "Check out this image!",
-    "filename": "my-image.jpg"
+    "mediaUrl": "https://picsum.photos/350/150"
   }
 }
 ```
 
-## 3. Send Video Message
-
-Send a video with optional caption.
-
-### Endpoint
-```
-POST /api/send-video
-```
-
-### Request Methods
-
-#### Method A: File Upload
-```bash
-curl -X POST http://localhost:3001/api/send-video \
-  -F "video=@/path/to/your/video.mp4" \
-  -F "phone=1234567890@c.us" \
-  -F "caption=Check out this video!" \
-  -F "filename=my-video.mp4"
-```
-
-#### Method B: Video URL
-```bash
-curl -X POST http://localhost:3001/api/send-video \
-  -H "Content-Type: application/json" \
-  -d '{
-    "phone": "1234567890@c.us",
-    "video": "https://example.com/video.mp4",
-    "caption": "Video from URL"
-  }'
-```
-
-## 4. Forward Message
+## 3. Forward Message
 
 Forward an existing message from one chat to another.
 
@@ -230,6 +162,7 @@ POST /api/forward-message
 ```bash
 curl -X POST http://localhost:3001/api/forward-message \
   -H "Content-Type: application/json" \
+  -H "X-API-Key: your-secret-api-key" \
   -d '{
     "messageId": "true_120363400200314986@g.us_3EB06D9D3CD7DA0AA28EDD_12425357213925@lid",
     "toChatId": "120363403302220749@g.us"
@@ -280,10 +213,11 @@ All endpoints return error responses in this format:
 ```
 
 Common errors:
+- `Unauthorized` - Invalid or missing API key
 - `Client is not ready` - WhatsApp client is not authenticated
 - `Validation error` - Invalid request body parameters
 - `Message not found` - Invalid messageId for forwarding
-- `Failed to send message` - Network or WhatsApp API error
+- `Failed to send message/media` - Network or WhatsApp API error
 
 ## Web UI
 
@@ -303,5 +237,5 @@ The UI allows you to:
 1. **Phone number format**: Always include country code without `+` or `00`
 2. **Group IDs**: Use the web UI to easily find and copy group IDs
 3. **Message IDs**: Save the `messageId` from send responses if you plan to forward
-4. **Media files**: Supported formats include JPG, PNG, GIF, MP4, AVI, MOV, PDF, DOC, XLS, PPT
-5. **File size limit**: Maximum 64MB for media files
+4. **Media URLs**: Ensure URLs are publicly accessible and return proper content
+5. **API Key**: Keep your API key secure and use environment variables

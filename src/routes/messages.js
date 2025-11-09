@@ -64,11 +64,8 @@ const textMessageSchema = Joi.object({
 
 const mediaMessageSchema = Joi.object({
   phone: phoneSchema,
-  media: Joi.string().uri().optional(),
-  image: Joi.string().optional(),
-  video: Joi.string().optional(),
-  caption: Joi.string().max(1024).optional(),
-  filename: Joi.string().max(255).optional()
+  media: Joi.string().uri().required(),
+  caption: Joi.string().min(1).max(4096).required()
 });
 
 // Middleware to validate request body
@@ -384,121 +381,6 @@ router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), va
   }
 });
 
-// Send image (legacy - redirects to send-media)
-router.post('/send-image', authenticateAPI, upload.single('image'), validateBody(mediaMessageSchema), validateSession, async (req, res) => {
-  try {
-    const { phone, caption, filename } = req.body;
-    const client = req.client;
-    
-    let media;
-    
-    if (req.file) {
-      // File upload
-      media = new MessageMedia(
-        req.file.mimetype,
-        req.file.buffer.toString('base64'),
-        filename || req.file.originalname
-      );
-    } else if (req.body.image) {
-      // Base64 or URL
-      if (req.body.image.startsWith('http')) {
-        media = await MessageMedia.fromUrl(req.body.image);
-      } else {
-        // Assume base64
-        const base64Data = req.body.image.replace(/^data:image\/[a-z]+;base64,/, '');
-        media = new MessageMedia('image/jpeg', base64Data, filename || 'image.jpg');
-      }
-    } else {
-      return res.status(400).json({
-        error: true,
-        message: 'No image provided. Use file upload or image field with URL/base64',
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    // Format phone number
-    const chatId = phone.includes('@') ? phone : `${phone}@c.us`;
-    
-    const options = caption ? { caption } : {};
-    const result = await client.sendMessage(chatId, media, options);
-    
-    res.json({
-      success: true,
-      messageId: result.id._serialized,
-      timestamp: new Date().toISOString(),
-      data: {
-        phone,
-        caption: caption || '',
-        filename: media.filename
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: true,
-      message: 'Failed to send image',
-      details: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
-
-// Send video (legacy - use send-media instead)
-router.post('/send-video', authenticateAPI, upload.single('video'), validateBody(mediaMessageSchema), validateSession, async (req, res) => {
-  try {
-    const { phone, caption, filename } = req.body;
-    const client = req.client;
-    
-    let media;
-    
-    if (req.file) {
-      // File upload
-      media = new MessageMedia(
-        req.file.mimetype,
-        req.file.buffer.toString('base64'),
-        filename || req.file.originalname
-      );
-    } else if (req.body.video) {
-      // URL or base64
-      if (req.body.video.startsWith('http')) {
-        media = await MessageMedia.fromUrl(req.body.video);
-      } else {
-        // Assume base64
-        const base64Data = req.body.video.replace(/^data:video\/[a-z0-9]+;base64,/, '');
-        media = new MessageMedia('video/mp4', base64Data, filename || 'video.mp4');
-      }
-    } else {
-      return res.status(400).json({
-        error: true,
-        message: 'No video provided. Use file upload or video field with URL/base64',
-        timestamp: new Date().toISOString()
-      });
-    }
-    
-    // Format phone number
-    const chatId = phone.includes('@') ? phone : `${phone}@c.us`;
-    
-    const options = caption ? { caption } : {};
-    const result = await client.sendMessage(chatId, media, options);
-    
-    res.json({
-      success: true,
-      messageId: result.id._serialized,
-      timestamp: new Date().toISOString(),
-      data: {
-        phone,
-        caption: caption || '',
-        filename: media.filename
-      }
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: true,
-      message: 'Failed to send video',
-      details: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
-});
 
 // Forward message endpoint
 router.post('/forward-message', authenticateAPI, async (req, res) => {
