@@ -6,15 +6,15 @@ const { MessageMedia } = require('whatsapp-web.js');
 const router = express.Router();
 
 // API Key from environment
-const API_KEY = process.env.API_KEY || 'your-secret-api-key';
+const WHATSAPP_API_KEY = process.env.WHATSAPP_API_KEY;
 
 // Authentication middleware
 const authenticateAPI = (req, res, next) => {
     console.log(`[AUTH] Checking API key for ${req.method} ${req.path}`);
     const providedKey = req.headers['x-api-key'] || req.query.api_key;
     
-    if (!providedKey || providedKey !== API_KEY) {
-        console.log(`[AUTH] Failed - Provided: ${providedKey}, Expected: ${API_KEY}`);
+    if (!providedKey || providedKey !== WHATSAPP_API_KEY) {
+        console.log(`[AUTH] Failed - Provided: ${providedKey}`);
         return res.status(401).json({ 
             error: 'Unauthorized', 
             message: 'Valid API key required' 

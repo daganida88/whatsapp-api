@@ -107,6 +107,25 @@ client.on('message', async (msg) => {
         hasQuotedMsg: !!msg.hasQuotedMsg,
         timestamp: new Date().toISOString()
     });
+    // Get allowed groups from environment variable (comma-separated list)
+    const allowedGroups = process.env.ALLOWED_GROUPS ? process.env.ALLOWED_GROUPS.split(',').map(id => id.trim()) : ['120363406850649153@g.us'];
+    console.log('🔧 Allowed groups:', allowedGroups);
+    
+    const isGroup = msg.from.includes('@g.us');
+    
+    // Only process group messages, drop private messages
+    if (!isGroup) {
+        console.log('🚫 Private message filtered - only group messages supported');
+        return;
+    }
+    
+    // If it's a group message, check if it's in the allowed groups list
+    const groupId = msg.from;
+    if (!allowedGroups.includes(groupId)) {
+        console.log(`🚫 Message from group ${groupId} filtered - not in allowed groups list`);
+        return;
+    }
+    console.log(`✅ Message from allowed group: ${groupId}`);
     
     // Forward messages to/from bot phone number to webhook
     const botPhoneNumber = process.env.BOT_PHONE_NUMBER;
@@ -115,13 +134,19 @@ client.on('message', async (msg) => {
         return;
     }
     
-    const webhookApiKey = process.env.WEBHOOK_API_KEY;
+    const webhookApiKey = process.env.WHATSAPP_API_KEY;
     if (!webhookApiKey) {
-        console.error('❌ WEBHOOK_API_KEY environment variable not set');
+        console.error('❌ WHATSAPP_API_KEY environment variable not set');
         return;
     }
-    
-    if (msg.to === botPhoneNumber || msg.from === botPhoneNumber) {
+
+    if (msg.to === botPhoneNumber) {
+        // Filter: Only forward messages containing Hebrew keywords חפש or מצא
+        // if (!msg.body.includes('חפש') && !msg.body.includes('מצא')) {
+        //     console.log('🚫 Message filtered - does not contain required Hebrew keywords');
+        //     return;
+        // }
+        
         try {
             const webhookPayload = {
                 message_id: msg.id.id,
@@ -153,6 +178,7 @@ client.on('message', async (msg) => {
         }
     }
 });
+
 
 client.on('group_join', (notification) => {
     console.log('👥 Group join:', notification);
