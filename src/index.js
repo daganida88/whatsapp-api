@@ -108,8 +108,20 @@ client.on('message', async (msg) => {
         timestamp: new Date().toISOString()
     });
     
-    // Forward messages from specific group to webhook
-    if (msg.from === '120363402393467235@g.us') {
+    // Forward messages to/from bot phone number to webhook
+    const botPhoneNumber = process.env.BOT_PHONE_NUMBER;
+    if (!botPhoneNumber) {
+        console.error('❌ BOT_PHONE_NUMBER environment variable not set');
+        return;
+    }
+    
+    const webhookApiKey = process.env.WEBHOOK_API_KEY;
+    if (!webhookApiKey) {
+        console.error('❌ WEBHOOK_API_KEY environment variable not set');
+        return;
+    }
+    
+    if (msg.to === botPhoneNumber || msg.from === botPhoneNumber) {
         try {
             const webhookPayload = {
                 message_id: msg.id.id,
@@ -121,11 +133,12 @@ client.on('message', async (msg) => {
             
             console.log('🔄 Forwarding to webhook v2:', webhookPayload);
             
-            const response = await fetch('http://localhost:8000/whatsapp/v2/webhook', {
+            const webhookUrl = process.env.WHATSAPP_BOT_URL || 'http://localhost:8000/whatsapp/v2/webhook';
+            const response = await fetch(webhookUrl, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-API-Key': process.env.WEBHOOK_API_KEY || 'your-webhook-api-key'
+                    'X-API-Key': webhookApiKey
                 },
                 body: JSON.stringify(webhookPayload)
             });
