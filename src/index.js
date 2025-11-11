@@ -4,6 +4,7 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcodeTerminal = require('qrcode-terminal');
+const fetch = require('node-fetch');
 require('dotenv').config();
 
 const messageRoutes = require('./routes/messages');
@@ -93,6 +94,59 @@ client.on('authenticated', () => {
 // Authentication failure
 client.on('auth_failure', msg => {
     console.error('❌ Authentication failed:', msg);
+});
+
+// Message events for debugging - only received messages
+client.on('message', async (msg) => {
+    // console.log('📨 Message received - ALL FIELDS:', JSON.stringify(msg, null, 2));
+    console.log('📨 Message received:', {
+        body: msg.body,
+        from: msg.from,
+        to: msg.to,
+        isGroup: msg.from.includes('@g.us'),
+        hasQuotedMsg: !!msg.hasQuotedMsg,
+        timestamp: new Date().toISOString()
+    });
+    
+    // Forward messages from specific group to webhook
+    if (msg.from === '120363402393467235@g.us') {
+        try {
+            const webhookPayload = {
+                message_id: msg.id.id,
+                chat_id: msg.from,
+                replied_message_id: msg.hasQuotedMsg ? msg._data.quotedStanzaID || null : null,
+                is_group: msg.from.includes('@g.us'),
+                message_text: msg.body
+            };
+            
+            console.log('🔄 Forwarding to webhook v2:', webhookPayload);
+            
+            const response = await fetch('http://localhost:8000/whatsapp/v2/webhook', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': process.env.WEBHOOK_API_KEY || 'your-webhook-api-key'
+                },
+                body: JSON.stringify(webhookPayload)
+            });
+            
+            if (response.ok) {
+                console.log('✅ Webhook v2 call successful');
+            } else {
+                console.error('❌ Webhook v2 call failed:', response.status, response.statusText);
+            }
+        } catch (error) {
+            console.error('❌ Error calling webhook v2:', error);
+        }
+    }
+});
+
+client.on('group_join', (notification) => {
+    console.log('👥 Group join:', notification);
+});
+
+client.on('group_leave', (notification) => {
+    console.log('👥 Group leave:', notification);
 });
 
 // Initialize the client

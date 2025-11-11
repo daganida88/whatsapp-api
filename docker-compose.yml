@@ -12,6 +12,7 @@ services:
     environment:
       - NODE_ENV=production
       - PORT=3000
+      - API_KEY=idand-owns
       - MAX_SESSIONS=${MAX_SESSIONS:-10}
       - SESSION_TIMEOUT=${SESSION_TIMEOUT:-300000}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-*}
