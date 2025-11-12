@@ -4,6 +4,7 @@ const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcodeTerminal = require('qrcode-terminal');
+const fetch = require('node-fetch');
 require('dotenv').config();
 
 const messageRoutes = require('./routes/messages');
@@ -95,6 +96,98 @@ client.on('auth_failure', msg => {
     console.error('❌ Authentication failed:', msg);
 });
 
+// Message events for debugging - only received messages
+client.on('message', async (msg) => {
+    // console.log('📨 Message received - ALL FIELDS:', JSON.stringify(msg, null, 2));
+    console.log('📨 Message received:', {
+        body: msg.body,
+        from: msg.from,
+        to: msg.to,
+        isGroup: msg.from.includes('@g.us'),
+        hasQuotedMsg: !!msg.hasQuotedMsg,
+        timestamp: new Date().toISOString()
+    });
+    // Get allowed groups from environment variable (comma-separated list)
+    const allowedGroups = process.env.ALLOWED_GROUPS ? process.env.ALLOWED_GROUPS.split(',').map(id => id.trim()) : ['120363406850649153@g.us'];
+    console.log('🔧 Allowed groups:', allowedGroups);
+    
+    const isGroup = msg.from.includes('@g.us');
+    
+    // Only process group messages, drop private messages
+    if (!isGroup) {
+        console.log('🚫 Private message filtered - only group messages supported');
+        return;
+    }
+    
+    // If it's a group message, check if it's in the allowed groups list
+    const groupId = msg.from;
+    if (!allowedGroups.includes(groupId)) {
+        console.log(`🚫 Message from group ${groupId} filtered - not in allowed groups list`);
+        return;
+    }
+    console.log(`✅ Message from allowed group: ${groupId}`);
+    
+    // Forward messages to/from bot phone number to webhook
+    const botPhoneNumber = process.env.BOT_PHONE_NUMBER;
+    if (!botPhoneNumber) {
+        console.error('❌ BOT_PHONE_NUMBER environment variable not set');
+        return;
+    }
+    
+    const webhookApiKey = process.env.WHATSAPP_API_KEY;
+    if (!webhookApiKey) {
+        console.error('❌ WHATSAPP_API_KEY environment variable not set');
+        return;
+    }
+
+    if (msg.to === botPhoneNumber) {
+        // Filter: Only forward messages containing Hebrew keywords חפש or מצא
+        // if (!msg.body.includes('חפש') && !msg.body.includes('מצא')) {
+        //     console.log('🚫 Message filtered - does not contain required Hebrew keywords');
+        //     return;
+        // }
+        
+        try {
+            const webhookPayload = {
+                message_id: msg.id.id,
+                chat_id: msg.from,
+                replied_message_id: msg.hasQuotedMsg ? msg._data.quotedStanzaID || null : null,
+                is_group: msg.from.includes('@g.us'),
+                message_text: msg.body
+            };
+            
+            console.log('🔄 Forwarding to webhook v2:', webhookPayload);
+            
+            const webhookUrl = process.env.WHATSAPP_BOT_URL || 'http://localhost:8000/whatsapp/v2/webhook';
+            const response = await fetch(webhookUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-API-Key': webhookApiKey
+                },
+                body: JSON.stringify(webhookPayload)
+            });
+            
+            if (response.ok) {
+                console.log('✅ Webhook v2 call successful');
+            } else {
+                console.error('❌ Webhook v2 call failed:', response.status, response.statusText);
+            }
+        } catch (error) {
+            console.error('❌ Error calling webhook v2:', error);
+        }
+    }
+});
+
+
+client.on('group_join', (notification) => {
+    console.log('👥 Group join:', notification);
+});
+
+client.on('group_leave', (notification) => {
+    console.log('👥 Group leave:', notification);
+});
+
 // Initialize the client
 console.log('🚀 Initializing WhatsApp client...');
 client.initialize();
@@ -117,6 +210,40 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || '1.0.0',
   });
+});
+
+// Debug endpoint to trigger message handler
+app.post('/debug/trigger-message', (req, res) => {
+  try {
+    const mockMessage = {
+      id: {
+        id: `DEBUG_${Date.now()}`
+      },
+      body: req.body.message || 'Debug test message',
+      from: req.body.from || '120363403302220749@g.us', // Default to allowed group
+      to: req.body.to || 'debug@c.us',
+      hasQuotedMsg: req.body.hasQuotedMsg || false,
+      _data: {
+        quotedStanzaID: req.body.quotedStanzaID || null
+      },
+      timestamp: Date.now()
+    };
+    
+    console.log('🧪 Triggering debug message event:', mockMessage);
+    client.emit('message', mockMessage);
+    
+    res.json({ 
+      success: true, 
+      message: 'Message event triggered',
+      mockMessage: mockMessage
+    });
+  } catch (error) {
+    console.error('❌ Error triggering debug message:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
 });
 
 // Root endpoint

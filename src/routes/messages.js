@@ -6,15 +6,15 @@ const { MessageMedia } = require('whatsapp-web.js');
 const router = express.Router();
 
 // API Key from environment
-const API_KEY = process.env.API_KEY || 'your-secret-api-key';
+const WHATSAPP_API_KEY = process.env.WHATSAPP_API_KEY;
 
 // Authentication middleware
 const authenticateAPI = (req, res, next) => {
     console.log(`[AUTH] Checking API key for ${req.method} ${req.path}`);
     const providedKey = req.headers['x-api-key'] || req.query.api_key;
     
-    if (!providedKey || providedKey !== API_KEY) {
-        console.log(`[AUTH] Failed - Provided: ${providedKey}, Expected: ${API_KEY}`);
+    if (!providedKey || providedKey !== WHATSAPP_API_KEY) {
+        console.log(`[AUTH] Failed - Provided: ${providedKey}`);
         return res.status(401).json({ 
             error: 'Unauthorized', 
             message: 'Valid API key required' 
@@ -65,9 +65,11 @@ const textMessageSchema = Joi.object({
 
 const mediaMessageSchema = Joi.object({
   phone: phoneSchema,
-  media: Joi.string().uri().required(),
+  media: Joi.string().required(),
+  base64Data: Joi.string().optional(),
+  mimeType: Joi.string().optional(),
   caption: Joi.string().min(1).max(4096).optional(),
-  message_id_to_reply: Joi.string().optional()
+  message_id_to_reply: Joi.string().allow(null).optional()
 });
 
 // Middleware to validate request body
@@ -344,11 +346,11 @@ router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), va
     
     console.log(`[SEND-MEDIA] Phone: ${phone}, Media: ${media}, Caption: ${caption}, ReplyTo: ${message_id_to_reply}`);
     
-    if (!media || !media.startsWith('http')) {
-      console.log(`[SEND-MEDIA] Invalid media URL: ${media}`);
+    if (!media) {
+      console.log(`[SEND-MEDIA] Media is required`);
       return res.status(400).json({
         error: true,
-        message: 'Media URL is required and must start with http',
+        message: 'Media URL or local path is required',
         providedMedia: media,
         timestamp: new Date().toISOString()
       });
@@ -357,9 +359,32 @@ router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), va
     const chatId = phone.includes('@') ? phone : `${phone}@c.us`;
     console.log(`[SEND-MEDIA] Formatted chat ID: ${chatId}`);
     
-    console.log(`[SEND-MEDIA] Fetching media from URL: ${media}`);
-    const mediaObj = await MessageMedia.fromUrl(media, { unsafeMime: true });
-    console.log(`[SEND-MEDIA] Media fetched successfully, type: ${mediaObj.mimetype}`);
+    let mediaObj;
+    if (media.startsWith('http')) {
+      console.log(`[SEND-MEDIA] Fetching media from URL: ${media}`);
+      mediaObj = await MessageMedia.fromUrl(media, { unsafeMime: true });
+      console.log(`[SEND-MEDIA] Media fetched from URL, type: ${mediaObj.mimetype}`);
+    } else if (media.startsWith('data:') || req.body.base64Data) {
+      console.log(`[SEND-MEDIA] Creating media from base64 data`);
+      const mimeType = req.body.mimeType || 'image/jpeg';
+      const base64Data = req.body.base64Data || media.split(',')[1]; // Handle data:image/jpeg;base64,... format
+      mediaObj = new MessageMedia(mimeType, base64Data);
+      console.log(`[SEND-MEDIA] Media created from base64, type: ${mediaObj.mimetype}`);
+    } else {
+      console.log(`[SEND-MEDIA] Loading media from local path: ${media}`);
+      try {
+        mediaObj = MessageMedia.fromFilePath(media);
+        console.log(`[SEND-MEDIA] Media loaded from file, type: ${mediaObj.mimetype}`);
+      } catch (fileError) {
+        console.log(`[SEND-MEDIA] File not found: ${media}`, fileError.message);
+        return res.status(400).json({
+          error: true,
+          message: 'File not found or cannot be read',
+          providedPath: media,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
     
     // Prepare options for caption and reply
     const options = {};
