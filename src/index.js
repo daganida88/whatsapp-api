@@ -212,6 +212,40 @@ app.get('/health', (req, res) => {
   });
 });
 
+// Debug endpoint to trigger message handler
+app.post('/debug/trigger-message', (req, res) => {
+  try {
+    const mockMessage = {
+      id: {
+        id: `DEBUG_${Date.now()}`
+      },
+      body: req.body.message || 'Debug test message',
+      from: req.body.from || '120363403302220749@g.us', // Default to allowed group
+      to: req.body.to || 'debug@c.us',
+      hasQuotedMsg: req.body.hasQuotedMsg || false,
+      _data: {
+        quotedStanzaID: req.body.quotedStanzaID || null
+      },
+      timestamp: Date.now()
+    };
+    
+    console.log('🧪 Triggering debug message event:', mockMessage);
+    client.emit('message', mockMessage);
+    
+    res.json({ 
+      success: true, 
+      message: 'Message event triggered',
+      mockMessage: mockMessage
+    });
+  } catch (error) {
+    console.error('❌ Error triggering debug message:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
