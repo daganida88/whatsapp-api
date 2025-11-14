@@ -206,6 +206,9 @@ SESSION_TIMEOUT=300000
 
 # CORS Configuration
 ALLOWED_ORIGINS=http://localhost:3000,https://yourdomain.com
+
+# WhatsApp Configuration
+ALLOW_PRIVATE_MESSAGES=false  # Set to true to enable private message support
 ```
 
 ## Multi-Session Usage
