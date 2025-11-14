@@ -50,12 +50,17 @@ const clientConfig = {
     }
 };
 
-if (process.env.PROXY_SERVER && process.env.PROXY_USERNAME && process.env.PROXY_PASSWORD) {
-    clientConfig.proxyAuthentication = { 
-        username: process.env.PROXY_USERNAME, 
-        password: process.env.PROXY_PASSWORD 
-    };
-    clientConfig.puppeteer.args.push(`--proxy-server=${process.env.PROXY_SERVER}`);
+if (process.env.PROXY_SERVER) {
+    console.log(`🌐 Configuring proxy server: ${process.env.PROXY_SERVER}`);
+    
+    // Check if proxy URL already contains authentication (like http://user:pass@host:port)
+    const hasEmbeddedAuth = process.env.PROXY_SERVER.includes('@');
+    
+    if (hasEmbeddedAuth) {
+        // Use proxy URL with embedded authentication
+        console.log('🔐 Using embedded proxy authentication');
+        clientConfig.puppeteer.args.push(`--proxy-server=${process.env.PROXY_SERVER}`);
+    }
 }
 
 const client = new Client(clientConfig);
