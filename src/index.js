@@ -51,7 +51,7 @@ const clientConfig = {
 };
 
 if (process.env.PROXY_SERVER) {
-    console.log(`🌐 Configuring proxy server: ${process.env.PROXY_SERVER}`);
+    console.log("🌐 Configuring proxy server");
     
     // Check if proxy URL already contains authentication (like http://user:pass@host:port)
     const hasEmbeddedAuth = process.env.PROXY_SERVER.includes('@');
