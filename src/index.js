@@ -112,22 +112,26 @@ client.on('message', async (msg) => {
     console.log('🔧 Allowed groups:', allowedGroups);
     
     const isGroup = msg.from.includes('@g.us');
+    const allowPrivateMessages = process.env.ALLOW_PRIVATE_MESSAGES === 'true';
     
-    // Only process group messages, drop private messages
-    if (!isGroup) {
-        console.log('🚫 Private message filtered - only group messages supported');
+    // Check if we should process private messages
+    if (!isGroup && !allowPrivateMessages) {
+        console.log('🚫 Private message filtered - private messages not enabled');
         return;
     }
     
     // If it's a group message, check if it's in the allowed groups list
-    const groupId = msg.from;
-    if (!allowedGroups.includes(groupId)) {
-        console.log(`🚫 Message from group ${groupId} filtered - not in allowed groups list`);
-        return;
+    if (isGroup) {
+        const groupId = msg.from;
+        if (!allowedGroups.includes(groupId)) {
+            console.log(`🚫 Message from group ${groupId} filtered - not in allowed groups list`);
+            return;
+        }
+        console.log(`✅ Message from allowed group: ${groupId}`);
+    } else {
+        console.log(`✅ Private message from: ${msg.from}`);
     }
-    console.log(`✅ Message from allowed group: ${groupId}`);
     
-    // Forward messages to/from bot phone number to webhook
     const botPhoneNumber = process.env.BOT_PHONE_NUMBER;
     if (!botPhoneNumber) {
         console.error('❌ BOT_PHONE_NUMBER environment variable not set');
