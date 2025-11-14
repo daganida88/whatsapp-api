@@ -75,7 +75,6 @@ const mediaMessageSchema = Joi.object({
 // Middleware to validate request body
 const validateBody = (schema) => {
   return (req, res, next) => {
-    console.log(`[VALIDATION] Validating request body:`, JSON.stringify(req.body, null, 2));
     const { error } = schema.validate(req.body);
     if (error) {
       console.log(`[VALIDATION] Failed:`, error.details);
@@ -392,7 +391,7 @@ router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), va
     if (message_id_to_reply) {
       options.quotedMessageId = message_id_to_reply;
     }
-    console.log(`[SEND-MEDIA] Sending message with options:`, options);
+    console.log("[SEND-MEDIA] Sending message");
     
     const result = await client.sendMessage(chatId, mediaObj, options);
     console.log(`[SEND-MEDIA] Message sent successfully, ID: ${result.id._serialized}`);
