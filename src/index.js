@@ -147,7 +147,7 @@ client.on('message', async (msg) => {
         
         try {
             const webhookPayload = {
-                message_id: msg.id.id,
+                message_id: msg.id._serialized,
                 chat_id: msg.from,
                 replied_message_id: msg.hasQuotedMsg ? msg._data.quotedStanzaID || null : null,
                 is_group: msg.from.includes('@g.us'),

@@ -60,7 +60,7 @@ const clientIdSchema = Joi.string()
 const textMessageSchema = Joi.object({
   phone: phoneSchema,
   message: Joi.string().min(1).max(4096).required(),
-  message_id_to_reply: Joi.string().optional()
+  message_id_to_reply: Joi.string().optional() // Full serialized message ID (e.g., "false_chat@g.us_3EB007BBE25141001CDC")
 });
 
 const mediaMessageSchema = Joi.object({
@@ -69,7 +69,7 @@ const mediaMessageSchema = Joi.object({
   base64Data: Joi.string().optional(),
   mimeType: Joi.string().optional(),
   caption: Joi.string().min(1).max(4096).optional(),
-  message_id_to_reply: Joi.string().allow(null).optional()
+  message_id_to_reply: Joi.string().allow(null).optional() // Full serialized message ID (e.g., "false_chat@g.us_3EB007BBE25141001CDC")
 });
 
 // Middleware to validate request body
@@ -308,13 +308,16 @@ router.post('/send-text', authenticateAPI, validateBody(textMessageSchema), vali
     // Format phone number
     const chatId = phone.includes('@') ? phone : `${phone}@c.us`;
     
-    // Prepare options for reply
-    const options = {};
-    if (message_id_to_reply) {
-      options.quotedMessageId = message_id_to_reply;
-    }
+    let result;
     
-    const result = await client.sendMessage(chatId, message, options);
+    if (message_id_to_reply) {
+      // Get the message to reply to and use reply method
+      const messageToReply = await client.getMessageById(message_id_to_reply);
+      result = await messageToReply.reply(message);
+    } else {
+      // Send regular message
+      result = await client.sendMessage(chatId, message);
+    }
     
     res.json({
       success: true,
@@ -383,17 +386,22 @@ router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), va
       }
     }
     
-    // Prepare options for caption and reply
-    const options = {};
-    if (caption) {
-      options.caption = caption;
-    }
-    if (message_id_to_reply) {
-      options.quotedMessageId = message_id_to_reply;
-    }
     console.log("[SEND-MEDIA] Sending message");
     
-    const result = await client.sendMessage(chatId, mediaObj, options);
+    let result;
+    
+    if (message_id_to_reply) {
+      // Get the message to reply to and use reply method
+      const messageToReply = await client.getMessageById(message_id_to_reply);
+      result = await messageToReply.reply(mediaObj, undefined, { caption });
+    } else {
+      // Send regular message
+      const options = {};
+      if (caption) {
+        options.caption = caption;
+      }
+      result = await client.sendMessage(chatId, mediaObj, options);
+    }
     console.log(`[SEND-MEDIA] Message sent successfully, ID: ${result.id._serialized}`);
     
     res.json({
