@@ -343,9 +343,7 @@ router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), va
     console.log(`[SEND-MEDIA] Starting send media request`);
     const { phone, media, caption, message_id_to_reply } = req.body;
     const client = req.client;
-    
-    console.log(`[SEND-MEDIA] Phone: ${phone}, Media: ${media}, Caption: ${caption}, ReplyTo: ${message_id_to_reply}`);
-    
+        
     if (!media) {
       console.log(`[SEND-MEDIA] Media is required`);
       return res.status(400).json({
