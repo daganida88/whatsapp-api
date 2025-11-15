@@ -44,6 +44,16 @@ const clientConfig = {
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu',
+            '--no-first-run',
+            '--disable-extensions',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-features=TranslateUI',
+            '--disable-web-security',
+            '--disable-features=VizDisplayCompositor',
             '--user-data-dir=/app/session_data/session',
         ],
         executablePath: process.env.CHROME_BIN || '/usr/bin/chromium-browser'
