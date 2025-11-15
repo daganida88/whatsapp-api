@@ -130,6 +130,13 @@ class SessionManager {
     });
 
     client.on('message', async (message) => {
+      // Check if message handling is enabled (default: true)
+      const handleMessages = process.env.HANDLE_MESSAGES !== 'false';
+      if (!handleMessages) {
+        console.log(`🚫 Message handling disabled for session ${clientId} - dropping message`);
+        return;
+      }
+      
       console.log(`Message received in session ${clientId}: ${message.body}`);
     });
 

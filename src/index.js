@@ -92,6 +92,13 @@ client.on('auth_failure', msg => {
 
 // Message events for debugging - only received messages
 client.on('message', async (msg) => {
+    // Check if message handling is enabled (default: true)
+    const handleMessages = process.env.HANDLE_MESSAGES !== 'false';
+    if (!handleMessages) {
+        console.log('🚫 Message handling disabled - dropping message');
+        return;
+    }
+    
     // console.log('📨 Message received - ALL FIELDS:', JSON.stringify(msg, null, 2));
     console.log('📨 Message received:', {
         body: msg.body,
