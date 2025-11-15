@@ -90,99 +90,99 @@ client.on('auth_failure', msg => {
     console.error('❌ Authentication failed:', msg);
 });
 
-// Message events for debugging - only received messages
-client.on('message', async (msg) => {
-    // Check if message handling is enabled (default: true)
-    const handleMessages = process.env.HANDLE_MESSAGES !== 'false';
-    if (!handleMessages) {
-        console.log('🚫 Message handling disabled - dropping message');
-        return;
-    }
-    
-    // console.log('📨 Message received - ALL FIELDS:', JSON.stringify(msg, null, 2));
-    console.log('📨 Message received:', {
-        body: msg.body,
-        from: msg.from,
-        to: msg.to,
-        isGroup: msg.from.includes('@g.us'),
-        hasQuotedMsg: !!msg.hasQuotedMsg,
-        timestamp: new Date().toISOString()
-    });
-    // Get allowed groups from environment variable (comma-separated list)
-    const allowedGroups = process.env.ALLOWED_GROUPS ? process.env.ALLOWED_GROUPS.split(',').map(id => id.trim()) : ['120363406850649153@g.us'];
-    console.log('🔧 Allowed groups:', allowedGroups);
-    
-    const isGroup = msg.from.includes('@g.us');
-    const allowPrivateMessages = process.env.ALLOW_PRIVATE_MESSAGES === 'true';
-    
-    // Check if we should process private messages
-    if (!isGroup && !allowPrivateMessages) {
-        console.log('🚫 Private message filtered - private messages not enabled');
-        return;
-    }
-    
-    // If it's a group message, check if it's in the allowed groups list
-    if (isGroup) {
-        const groupId = msg.from;
-        if (!allowedGroups.includes(groupId)) {
-            console.log(`🚫 Message from group ${groupId} filtered - not in allowed groups list`);
+// Conditionally register message event handler based on environment variable
+const handleMessages = process.env.HANDLE_MESSAGES !== 'false';
+if (handleMessages) {
+    console.log('✅ Message handling enabled');
+    // Message events for debugging - only received messages
+    client.on('message', async (msg) => {
+        // console.log('📨 Message received - ALL FIELDS:', JSON.stringify(msg, null, 2));
+        console.log('📨 Message received:', {
+            body: msg.body,
+            from: msg.from,
+            to: msg.to,
+            isGroup: msg.from.includes('@g.us'),
+            hasQuotedMsg: !!msg.hasQuotedMsg,
+            timestamp: new Date().toISOString()
+        });
+        // Get allowed groups from environment variable (comma-separated list)
+        const allowedGroups = process.env.ALLOWED_GROUPS ? process.env.ALLOWED_GROUPS.split(',').map(id => id.trim()) : ['120363406850649153@g.us'];
+        console.log('🔧 Allowed groups:', allowedGroups);
+        
+        const isGroup = msg.from.includes('@g.us');
+        const allowPrivateMessages = process.env.ALLOW_PRIVATE_MESSAGES === 'true';
+        
+        // Check if we should process private messages
+        if (!isGroup && !allowPrivateMessages) {
+            console.log('🚫 Private message filtered - private messages not enabled');
             return;
         }
-        console.log(`✅ Message from allowed group: ${groupId}`);
-    } else {
-        console.log(`✅ Private message from: ${msg.from}`);
-    }
-    
-    const botPhoneNumber = process.env.BOT_PHONE_NUMBER;
-    if (!botPhoneNumber) {
-        console.error('❌ BOT_PHONE_NUMBER environment variable not set');
-        return;
-    }
-    
-    const webhookApiKey = process.env.WHATSAPP_API_KEY;
-    if (!webhookApiKey) {
-        console.error('❌ WHATSAPP_API_KEY environment variable not set');
-        return;
-    }
-
-    if (msg.to === botPhoneNumber) {
-        // Filter: Only forward messages containing Hebrew keywords חפש or מצא
-        // if (!msg.body.includes('חפש') && !msg.body.includes('מצא')) {
-        //     console.log('🚫 Message filtered - does not contain required Hebrew keywords');
-        //     return;
-        // }
         
-        try {
-            const webhookPayload = {
-                message_id: msg.id._serialized,
-                chat_id: msg.from,
-                replied_message_id: msg.hasQuotedMsg ? msg._data.quotedStanzaID || null : null,
-                is_group: msg.from.includes('@g.us'),
-                message_text: msg.body
-            };
-            
-            console.log('🔄 Forwarding to webhook v2:', webhookPayload);
-            
-            const webhookUrl = process.env.WHATSAPP_BOT_URL || 'http://localhost:8000/whatsapp/v2/webhook';
-            const response = await fetch(webhookUrl, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'X-API-Key': webhookApiKey
-                },
-                body: JSON.stringify(webhookPayload)
-            });
-            
-            if (response.ok) {
-                console.log('✅ Webhook v2 call successful');
-            } else {
-                console.error('❌ Webhook v2 call failed:', response.status, response.statusText);
+        // If it's a group message, check if it's in the allowed groups list
+        if (isGroup) {
+            const groupId = msg.from;
+            if (!allowedGroups.includes(groupId)) {
+                console.log(`🚫 Message from group ${groupId} filtered - not in allowed groups list`);
+                return;
             }
-        } catch (error) {
-            console.error('❌ Error calling webhook v2:', error);
+            console.log(`✅ Message from allowed group: ${groupId}`);
+        } else {
+            console.log(`✅ Private message from: ${msg.from}`);
         }
-    }
-});
+        
+        const botPhoneNumber = process.env.BOT_PHONE_NUMBER;
+        if (!botPhoneNumber) {
+            console.error('❌ BOT_PHONE_NUMBER environment variable not set');
+            return;
+        }
+        
+        const webhookApiKey = process.env.WHATSAPP_API_KEY;
+        if (!webhookApiKey) {
+            console.error('❌ WHATSAPP_API_KEY environment variable not set');
+            return;
+        }
+
+        if (msg.to === botPhoneNumber) {
+            // Filter: Only forward messages containing Hebrew keywords חפש or מצא
+            // if (!msg.body.includes('חפש') && !msg.body.includes('מצא')) {
+            //     console.log('🚫 Message filtered - does not contain required Hebrew keywords');
+            //     return;
+            // }
+            
+            try {
+                const webhookPayload = {
+                    message_id: msg.id._serialized,
+                    chat_id: msg.from,
+                    replied_message_id: msg.hasQuotedMsg ? msg._data.quotedStanzaID || null : null,
+                    is_group: msg.from.includes('@g.us'),
+                    message_text: msg.body
+                };
+                
+                console.log('🔄 Forwarding to webhook v2:', webhookPayload);
+                
+                const webhookUrl = process.env.WHATSAPP_BOT_URL || 'http://localhost:8000/whatsapp/v2/webhook';
+                const response = await fetch(webhookUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-API-Key': webhookApiKey
+                    },
+                    body: JSON.stringify(webhookPayload)
+                });
+                
+                if (response.ok) {
+                    console.log('✅ Webhook v2 call successful');
+                } else {
+                    console.error('❌ Webhook v2 call failed:', response.status, response.statusText);
+                }
+            } catch (error) {
+                console.error('❌ Error calling webhook v2:', error);
+            }
+        }
+    });
+} else {
+    console.log('🚫 Message handling disabled - no event handlers registered');
+}
 
 
 client.on('group_join', (notification) => {
