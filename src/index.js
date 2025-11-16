@@ -262,7 +262,7 @@ app.use('/api', messageRoutes);
 app.use('/ui', uiRoutes);
 
 // Health check endpoint (protected)
-app.get('/health', authenticateAPI, (req, res) => {
+app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
