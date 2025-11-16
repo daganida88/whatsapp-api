@@ -302,22 +302,44 @@ router.get('/sessions/:clientId/chats', async (req, res) => {
 // Send text message
 router.post('/send-text', authenticateAPI, validateBody(textMessageSchema), validateSession, async (req, res) => {
   try {
+    console.log('[SEND-TEXT] Starting send text request');
     const { phone, message, message_id_to_reply } = req.body;
     const client = req.client;
+    const executeWithTimeout = req.executeWithTimeout;
     
     // Format phone number
     const chatId = phone.includes('@') ? phone : `${phone}@c.us`;
+    console.log(`[SEND-TEXT] Formatted chat ID: ${chatId}`);
     
     let result;
     
     if (message_id_to_reply) {
-      // Get the message to reply to and use reply method
-      const messageToReply = await client.getMessageById(message_id_to_reply);
-      result = await messageToReply.reply(message);
+      console.log(`[SEND-TEXT] Getting message to reply to: ${message_id_to_reply}`);
+      
+      // Get the message to reply to with timeout
+      const messageToReply = await executeWithTimeout(
+        () => client.getMessageById(message_id_to_reply),
+        'getMessageById for reply'
+      );
+      
+      console.log(`[SEND-TEXT] Message found, sending reply...`);
+      
+      // Send reply with timeout
+      result = await executeWithTimeout(
+        () => messageToReply.reply(message),
+        'reply message'
+      );
     } else {
-      // Send regular message
-      result = await client.sendMessage(chatId, message);
+      console.log(`[SEND-TEXT] Sending regular message to ${chatId}`);
+      
+      // Send regular message with timeout
+      result = await executeWithTimeout(
+        () => client.sendMessage(chatId, message),
+        'send text message'
+      );
     }
+    
+    console.log(`[SEND-TEXT] Message sent successfully: ${result.id._serialized}`);
     
     res.json({
       success: true,
@@ -330,6 +352,7 @@ router.post('/send-text', authenticateAPI, validateBody(textMessageSchema), vali
       }
     });
   } catch (error) {
+    console.error('[SEND-TEXT] Error:', error);
     res.status(500).json({
       error: true,
       message: 'Failed to send text message',
@@ -390,17 +413,67 @@ router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), va
     
     let result;
     
+    // Helper function to send with timeout and fallback
+    const sendWithTimeout = async (sendFunction, timeoutMs = 120000) => {
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`Send operation timeout after ${timeoutMs/1000} seconds`)), timeoutMs);
+      });
+      
+      try {
+        // First attempt - normal send
+        console.log("[SEND-MEDIA] Attempting normal send...");
+        return await Promise.race([sendFunction(), timeoutPromise]);
+      } catch (error) {
+        if (error.message.includes('timeout')) {
+          console.log("[SEND-MEDIA] Normal send timed out, trying one more attempt...");
+          
+          // Fallback attempt - just retry with same optimized options
+          try {
+            // Create new timeout for fallback
+            const fallbackTimeoutPromise = new Promise((_, reject) => {
+              setTimeout(() => reject(new Error(`Fallback send timeout after ${timeoutMs/1000} seconds`)), timeoutMs);
+            });
+            
+            return await Promise.race([sendFunction(), fallbackTimeoutPromise]);
+          } catch (fallbackError) {
+            console.error("[SEND-MEDIA] Fallback also failed:", fallbackError.message);
+            throw new Error(`Both send attempts failed. Last error: ${fallbackError.message}`);
+          }
+        }
+        throw error;
+      }
+    };
+    
     if (message_id_to_reply) {
       // Get the message to reply to and use reply method
       const messageToReply = await client.getMessageById(message_id_to_reply);
-      result = await messageToReply.reply(mediaObj, undefined, { caption });
+      
+      const replyFunction = () => {
+        const options = {
+          caption,
+          sendSeen: false,
+          linkPreview: false,
+          parseVCards: false
+        };
+        return messageToReply.reply(mediaObj, undefined, options);
+      };
+      
+      result = await sendWithTimeout(replyFunction);
     } else {
       // Send regular message
-      const options = {};
-      if (caption) {
-        options.caption = caption;
-      }
-      result = await client.sendMessage(chatId, mediaObj, options);
+      const sendFunction = () => {
+        const options = {
+          sendSeen: false,
+          linkPreview: false,
+          parseVCards: false
+        };
+        if (caption) {
+          options.caption = caption;
+        }
+        return client.sendMessage(chatId, mediaObj, options);
+      };
+      
+      result = await sendWithTimeout(sendFunction);
     }
     console.log(`[SEND-MEDIA] Message sent successfully, ID: ${result.id._serialized}`);
     
@@ -461,8 +534,11 @@ router.post('/forward-message', authenticateAPI, async (req, res) => {
 
     console.log(`[FORWARD] Getting message by ID: ${messageId}`);
     
-    // Get the message by ID
-    const message = await client.getMessageById(messageId);
+    // Get the message by ID with timeout
+    const message = await req.executeWithTimeout(
+      () => client.getMessageById(messageId),
+      'getMessageById for forward'
+    );
     
     if (!message) {
       console.log(`[FORWARD] Message not found: ${messageId}`);
@@ -475,8 +551,11 @@ router.post('/forward-message', authenticateAPI, async (req, res) => {
 
     console.log(`[FORWARD] Message found, forwarding to: ${toChatId}`);
     
-    // Forward the message
-    await message.forward(toChatId);
+    // Forward the message with timeout
+    await req.executeWithTimeout(
+      () => message.forward(toChatId),
+      'forward message'
+    );
     
     console.log(`[FORWARD] Message forwarded successfully from ${messageId} to ${toChatId}`);
     

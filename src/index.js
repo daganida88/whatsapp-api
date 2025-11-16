@@ -76,6 +76,89 @@ if (process.env.PROXY_SERVER) {
 const client = new Client(clientConfig);
 
 let clientReady = false;
+let lastHealthCheck = Date.now();
+let reconnecting = false;
+
+// Helper function to force restart client when browser is unresponsive
+const forceRestartClient = async () => {
+    if (reconnecting) {
+        console.log('🔄 Client restart already in progress, skipping...');
+        return;
+    }
+    
+    reconnecting = true;
+    console.log('🔧 Force restarting WhatsApp client due to unresponsive state...');
+    
+    try {
+        clientReady = false;
+        
+        // Destroy current client
+        console.log('🗑️ Destroying current client...');
+        await client.destroy().catch(err => console.log('Destroy error (expected):', err.message));
+        
+        // Wait before reinitializing
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        // Reinitialize
+        console.log('🚀 Reinitializing client...');
+        await client.initialize();
+        
+        console.log('✅ Client restart completed');
+    } catch (error) {
+        console.error('❌ Error during client restart:', error);
+    } finally {
+        reconnecting = false;
+    }
+};
+
+// Helper function to execute WhatsApp operations with timeout and auto-restart
+const executeWithTimeout = async (operation, operationName, timeoutMs = 30000) => {
+    const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`${operationName} timeout after ${timeoutMs/1000} seconds`)), timeoutMs);
+    });
+    
+    try {
+        console.log(`[TIMEOUT] Starting ${operationName}...`);
+        const result = await Promise.race([operation(), timeoutPromise]);
+        console.log(`[TIMEOUT] ${operationName} completed successfully`);
+        lastHealthCheck = Date.now(); // Update health check on successful operation
+        return result;
+    } catch (error) {
+        console.error(`[TIMEOUT] ${operationName} failed:`, error.message);
+        
+        if (error.message.includes('timeout')) {
+            console.log(`[TIMEOUT] ${operationName} timed out - triggering client restart`);
+            // Don't await this to avoid blocking the response
+            forceRestartClient().catch(err => console.error('Restart failed:', err));
+        }
+        
+        throw error;
+    }
+};
+
+// Browser health check function
+const checkBrowserHealth = async () => {
+    try {
+        if (!clientReady || !client.pupPage) {
+            return false;
+        }
+        
+        // Test if browser can execute simple JavaScript
+        const healthTimeout = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error('Browser health check timeout')), 5000);
+        });
+        
+        await Promise.race([
+            client.pupPage.evaluate(() => window.location.href),
+            healthTimeout
+        ]);
+        
+        return true;
+    } catch (error) {
+        console.error('[HEALTH] Browser health check failed:', error.message);
+        return false;
+    }
+};
 
 // QR Code event
 client.on('qr', (qr) => {
@@ -232,10 +315,37 @@ client.on('change_state', state => {
 console.log('🚀 Initializing WhatsApp client...');
 client.initialize();
 
+// Periodic health monitoring (every 1 minutes)
+setInterval(async () => {
+    if (!clientReady) return;
+    
+    const timeSinceLastCheck = Date.now() - lastHealthCheck;
+    const maxIdleTime = 2 * 60 * 1000; // 2 minutes
+    
+    console.log(`[HEALTH] Checking browser health... (idle for ${Math.round(timeSinceLastCheck/1000)}s)`);
+    
+    // If no successful operations for too long, do health check
+    if (timeSinceLastCheck > maxIdleTime) {
+        console.log('[HEALTH] Client idle too long, checking browser health...');
+        const isHealthy = await checkBrowserHealth();
+        
+        if (!isHealthy) {
+            console.log('[HEALTH] Browser is unresponsive - triggering restart');
+            forceRestartClient().catch(err => console.error('Health check restart failed:', err));
+        } else {
+            console.log('[HEALTH] Browser is healthy');
+            lastHealthCheck = Date.now();
+        }
+    }
+}, 60000); // Check every 1 minutes
+
 // Make client available to routes
 app.use((req, res, next) => {
   req.client = client;
   req.clientReady = clientReady;
+  req.executeWithTimeout = executeWithTimeout;
+  req.checkBrowserHealth = checkBrowserHealth;
+  req.forceRestartClient = forceRestartClient;
   next();
 });
 
