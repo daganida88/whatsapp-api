@@ -396,7 +396,11 @@ router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), va
       result = await messageToReply.reply(mediaObj, undefined, { caption });
     } else {
       // Send regular message
-      const options = {};
+      const options = {
+        sendSeen: false,
+        linkPreview: false,
+        parseVCards: false,
+      };
       if (caption) {
         options.caption = caption;
       }

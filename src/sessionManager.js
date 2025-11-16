@@ -254,8 +254,16 @@ class SessionManager {
     // Format phone number
     const chatId = phoneNumber.includes('@') ? phoneNumber : `${phoneNumber}@c.us`;
     
+    // Add default options
+    const defaultOptions = {
+      sendSeen: false,
+      linkPreview: false,
+      parseVCards: false,
+    };
+    const finalOptions = { ...defaultOptions, ...options };
+    
     try {
-      const result = await client.sendMessage(chatId, message, options);
+      const result = await client.sendMessage(chatId, message, finalOptions);
       this.getSession(clientId).lastActivity = Date.now();
       return result;
     } catch (error) {
@@ -274,8 +282,16 @@ class SessionManager {
     // Format phone number
     const chatId = phoneNumber.includes('@') ? phoneNumber : `${phoneNumber}@c.us`;
     
+    // Add default options
+    const defaultOptions = {
+      sendSeen: false,
+      linkPreview: false,
+      parseVCards: false,
+    };
+    const finalOptions = { ...defaultOptions, ...options };
+    
     try {
-      const result = await client.sendMessage(chatId, media, options);
+      const result = await client.sendMessage(chatId, media, finalOptions);
       this.getSession(clientId).lastActivity = Date.now();
       return result;
     } catch (error) {
