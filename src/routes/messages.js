@@ -501,4 +501,74 @@ router.post('/forward-message', authenticateAPI, async (req, res) => {
   }
 });
 
+// Clear messages from a specific group
+router.post('/clear-group-messages', authenticateAPI, validateSession, async (req, res) => {
+  try {
+    const { chatId } = req.body;
+    
+    console.log(`[CLEAR-MESSAGES] Starting clear messages request - ChatId: ${chatId}`);
+    
+    // Validate required fields
+    if (!chatId) {
+      console.log('[CLEAR-MESSAGES] Validation failed - Missing chatId');
+      return res.status(400).json({
+        error: true,
+        message: 'Missing required field: chatId is required',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    const client = req.client;
+    console.log(`[CLEAR-MESSAGES] Getting chat by ID: ${chatId}`);
+    
+    // Get the chat by ID
+    const chat = await client.getChatById(chatId);
+    
+    if (!chat) {
+      console.log(`[CLEAR-MESSAGES] Chat not found: ${chatId}`);
+      return res.status(404).json({
+        error: true,
+        message: 'Chat not found',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    // Check if the chat is a group
+    if (!chat.isGroup) {
+      console.log(`[CLEAR-MESSAGES] Chat is not a group: ${chatId}`);
+      return res.status(400).json({
+        error: true,
+        message: 'Chat is not a group. Only group chats can be cleared.',
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    console.log(`[CLEAR-MESSAGES] Clearing messages for group: ${chat.name || chatId}`);
+    
+    // Clear the chat messages
+    await chat.clearMessages();
+    
+    console.log(`[CLEAR-MESSAGES] Messages cleared successfully for group: ${chat.name || chatId}`);
+    
+    res.json({
+      success: true,
+      message: 'Group messages cleared successfully',
+      data: {
+        chatId: chatId,
+        groupName: chat.name || 'Unknown Group'
+      },
+      timestamp: new Date().toISOString()
+    });
+    
+  } catch (error) {
+    console.error(`[CLEAR-MESSAGES] Error clearing messages:`, error);
+    res.status(500).json({
+      error: true,
+      message: 'Failed to clear group messages',
+      details: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 module.exports = router;
