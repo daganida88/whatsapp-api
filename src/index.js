@@ -203,6 +203,31 @@ client.on('group_leave', (notification) => {
     console.log('👥 Group leave:', notification);
 });
 
+// Disconnect handler with auto-reconnect
+client.on('disconnected', (reason) => {
+    console.log('🔌 Client disconnected:', reason);
+    clientReady = false;
+    
+    // Auto-reconnect after 5 seconds
+    console.log('🔄 Attempting to reconnect in 5 seconds...');
+    setTimeout(() => {
+        console.log('🚀 Reinitializing WhatsApp client...');
+        client.initialize().catch(err => {
+            console.error('❌ Reconnection failed:', err);
+        });
+    }, 5000);
+});
+
+// Loading screen handler
+client.on('loading_screen', (percent, message) => {
+    console.log('⏳ Loading screen:', percent + '%', message);
+});
+
+// State change handler
+client.on('change_state', state => {
+    console.log('🔄 Client state changed:', state);
+});
+
 // Initialize the client
 console.log('🚀 Initializing WhatsApp client...');
 client.initialize();
@@ -225,6 +250,20 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     version: process.env.npm_package_version || '1.0.0',
   });
+});
+
+// WhatsApp connection status endpoint
+app.get('/whatsapp-status', (req, res) => {
+  const status = {
+    connected: clientReady,
+    timestamp: new Date().toISOString(),
+    client_info: clientReady && client.info ? {
+      pushname: client.info.pushname,
+      me: client.info.me
+    } : null
+  };
+  
+  res.json(status);
 });
 
 // Debug endpoint to trigger message handler
