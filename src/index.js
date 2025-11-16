@@ -239,12 +239,30 @@ app.use((req, res, next) => {
   next();
 });
 
+// Import authentication middleware
+const authenticateAPI = (req, res, next) => {
+    console.log(`[AUTH] Checking API key for ${req.method} ${req.path}`);
+    const WHATSAPP_API_KEY = process.env.WHATSAPP_API_KEY;
+    const providedKey = req.headers['x-api-key'] || req.query.api_key;
+    
+    if (!providedKey || providedKey !== WHATSAPP_API_KEY) {
+        console.log(`[AUTH] Failed - Provided: ${providedKey}`);
+        return res.status(401).json({ 
+            error: 'Unauthorized', 
+            message: 'Valid API key required' 
+        });
+    }
+    
+    console.log(`[AUTH] Success - API key validated`);
+    next();
+};
+
 // Routes
 app.use('/api', messageRoutes);
 app.use('/ui', uiRoutes);
 
-// Health check endpoint
-app.get('/health', (req, res) => {
+// Health check endpoint (protected)
+app.get('/health', authenticateAPI, (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -252,8 +270,8 @@ app.get('/health', (req, res) => {
   });
 });
 
-// WhatsApp connection status endpoint
-app.get('/whatsapp-status', (req, res) => {
+// WhatsApp connection status endpoint (protected)
+app.get('/whatsapp-status', authenticateAPI, (req, res) => {
   const status = {
     connected: clientReady,
     timestamp: new Date().toISOString(),
@@ -266,8 +284,8 @@ app.get('/whatsapp-status', (req, res) => {
   res.json(status);
 });
 
-// Debug endpoint to trigger message handler
-app.post('/debug/trigger-message', (req, res) => {
+// Debug endpoint to trigger message handler (protected)
+app.post('/debug/trigger-message', authenticateAPI, (req, res) => {
   try {
     const mockMessage = {
       id: {
