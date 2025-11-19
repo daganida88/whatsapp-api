@@ -40,7 +40,7 @@ const clientConfig = {
         dataPath: '/app/session_data'
     }),
     puppeteer: {
-        headless: false,
+        headless: true,
         args: [
             '--no-sandbox',
             '--disable-setuid-sandbox',

@@ -16,6 +16,8 @@ RUN apk add --no-cache \
     wget \
     gnupg
 
+    
+
 # Set Puppeteer to use installed Chromium
 ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
     PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium-browser \
