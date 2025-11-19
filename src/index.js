@@ -57,6 +57,11 @@ const clientConfig = {
             '--user-data-dir=/app/session_data/session',
         ],
         executablePath: process.env.CHROME_BIN || '/usr/bin/chromium-browser'
+    },
+        // strongly recommended right now to avoid WA web version issues:
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
     }
 };
 
@@ -73,164 +78,211 @@ if (process.env.PROXY_SERVER) {
     }
 }
 
-const client = new Client(clientConfig);
 
-let clientReady = false;
+let client;
 
-// QR Code event
-client.on('qr', (qr) => {
-    console.log('📱 QR Code received! Scan with WhatsApp:');
-    qrcodeTerminal.generate(qr, { small: true });
-});
+function createClient() {
+  client = new Client(clientConfig);
+  attachClientHandlers(client);
+  client.initialize();
+}
 
-// Ready event
-client.on('ready', () => {
-    console.log('✅ WhatsApp client is ready!');
-    console.log('📱 Connected as:', client.info.pushname);
-    clientReady = true;
-});
+function guardPage(page) {
+  page.on('error', err => {
+    console.error('Puppeteer page error:', err);
+    scheduleRestart();
+  });
 
-// Authentication success
-client.on('authenticated', () => {
-    console.log('🔐 Authenticated successfully!');
-});
+  page.on('pageerror', err => {
+    console.error('Page JS error:', err);
+    // usually not fatal, but you can log it
+  });
 
-// Authentication failure
-client.on('auth_failure', msg => {
-    console.error('❌ Authentication failed:', msg);
-});
+  page.on('close', () => {
+    console.warn('Puppeteer page was closed');
+    scheduleRestart();
+  });
 
-// Conditionally register message event handler based on environment variable
-const handleMessages = process.env.HANDLE_MESSAGES !== 'false';
-if (handleMessages) {
-    console.log('✅ Message handling enabled');
-    // Message events for debugging - only received messages
-    client.on('message', async (msg) => {
-        // console.log('📨 Message received - ALL FIELDS:', JSON.stringify(msg, null, 2));
-        console.log('📨 Message received:', {
-            body: msg.body,
-            from: msg.from,
-            to: msg.to,
-            isGroup: msg.from.includes('@g.us'),
-            hasQuotedMsg: !!msg.hasQuotedMsg,
-            timestamp: new Date().toISOString()
-        });
-        // Get allowed groups from environment variable (comma-separated list)
-        const allowedGroups = process.env.ALLOWED_GROUPS ? process.env.ALLOWED_GROUPS.split(',').map(id => id.trim()) : ['120363406850649153@g.us'];
-        console.log('🔧 Allowed groups:', allowedGroups);
-        
-        const isGroup = msg.from.includes('@g.us');
-        const allowPrivateMessages = process.env.ALLOW_PRIVATE_MESSAGES === 'true';
-        
-        // Check if we should process private messages
-        if (!isGroup && !allowPrivateMessages) {
-            console.log('🚫 Private message filtered - private messages not enabled');
-            return;
-        }
-        
-        // If it's a group message, check if it's in the allowed groups list
-        if (isGroup) {
-            const groupId = msg.from;
-            if (!allowedGroups.includes(groupId)) {
-                console.log(`🚫 Message from group ${groupId} filtered - not in allowed groups list`);
-                return;
-            }
-            console.log(`✅ Message from allowed group: ${groupId}`);
-        } else {
-            console.log(`✅ Private message from: ${msg.from}`);
-        }
-        
-        const botPhoneNumber = process.env.BOT_PHONE_NUMBER;
-        if (!botPhoneNumber) {
-            console.error('❌ BOT_PHONE_NUMBER environment variable not set');
-            return;
-        }
-        
-        const webhookApiKey = process.env.WHATSAPP_API_KEY;
-        if (!webhookApiKey) {
-            console.error('❌ WHATSAPP_API_KEY environment variable not set');
-            return;
-        }
-
-        if (msg.to === botPhoneNumber) {
-            // Filter: Only forward messages containing Hebrew keywords חפש or מצא
-            // if (!msg.body.includes('חפש') && !msg.body.includes('מצא')) {
-            //     console.log('🚫 Message filtered - does not contain required Hebrew keywords');
-            //     return;
-            // }
-            
-            try {
-                const webhookPayload = {
-                    message_id: msg.id._serialized,
-                    chat_id: msg.from,
-                    replied_message_id: msg.hasQuotedMsg ? msg._data.quotedStanzaID || null : null,
-                    is_group: msg.from.includes('@g.us'),
-                    message_text: msg.body
-                };
-                
-                console.log('🔄 Forwarding to webhook v2:', webhookPayload);
-                
-                const webhookUrl = process.env.WHATSAPP_BOT_URL || 'http://localhost:8000/whatsapp/v2/webhook';
-                const response = await fetch(webhookUrl, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-API-Key': webhookApiKey
-                    },
-                    body: JSON.stringify(webhookPayload)
-                });
-                
-                if (response.ok) {
-                    console.log('✅ Webhook v2 call successful');
-                } else {
-                    console.error('❌ Webhook v2 call failed:', response.status, response.statusText);
-                }
-            } catch (error) {
-                console.error('❌ Error calling webhook v2:', error);
-            }
-        }
-    });
-} else {
-    console.log('🚫 Message handling disabled - no event handlers registered');
+  const browser = page.browser();
+  browser.on('disconnected', () => {
+    console.warn('Browser disconnected');
+    scheduleRestart();
+  });
 }
 
 
-client.on('group_join', (notification) => {
-    console.log('👥 Group join:', notification);
-});
+function attachClientHandlers(client) {
+  client.on('ready', () => {
+    console.log('✅ WhatsApp client is ready!');
+    clientReady = true;
+    const page = client.pupPage;
+    guardPage(page);
+    protectNavigation(page);
+      
+  });
 
-client.on('group_leave', (notification) => {
-    console.log('👥 Group leave:', notification);
-});
-
-// Disconnect handler with auto-reconnect
-client.on('disconnected', (reason) => {
-    console.log('🔌 Client disconnected:', reason);
+  client.on('disconnected', reason => {
+    console.warn('Client disconnected:', reason);
     clientReady = false;
-    
-    // Auto-reconnect after 5 seconds
-    console.log('🔄 Attempting to reconnect in 5 seconds...');
-    setTimeout(() => {
-        console.log('🚀 Reinitializing WhatsApp client...');
-        client.initialize().catch(err => {
-            console.error('❌ Reconnection failed:', err);
-        });
-    }, 5000);
-});
+    // if reason is 'LOGOUT', you'll likely need a new QR
+    // but for crashes, just restart
+    scheduleRestart();
+  });
 
-// Loading screen handler
-client.on('loading_screen', (percent, message) => {
+  client.on('auth_failure', msg => {
+    console.error('❌ Authentication failed:', msg);
+    // don't auto-delete auth here unless you really want a fresh QR
+  });
+
+  // Loading screen handler
+  client.on('loading_screen', (percent, message) => {
     console.log('⏳ Loading screen:', percent + '%', message);
-});
+  });
 
-// State change handler
-client.on('change_state', state => {
+  // State change handler
+  client.on('change_state', state => {
     console.log('🔄 Client state changed:', state);
-});
+  });
 
-// Initialize the client
-console.log('🚀 Initializing WhatsApp client...');
-client.initialize();
+  // QR Code event
+  client.on('qr', (qr) => {
+    console.log('📱 QR Code received! Scan with WhatsApp:');
+    qrcodeTerminal.generate(qr, { small: true });
+  });
+
+  // Authentication success
+  client.on('authenticated', () => {
+    console.log('🔐 Authenticated successfully!');
+  });
+
+
+  // Conditionally register message event handler based on environment variable
+  const handleMessages = process.env.HANDLE_MESSAGES !== 'false';
+  if (handleMessages) {
+      console.log('✅ Message handling enabled');
+      // Message events for debugging - only received messages
+      client.on('message', async (msg) => {
+          // console.log('📨 Message received - ALL FIELDS:', JSON.stringify(msg, null, 2));
+          console.log('📨 Message received:', {
+              body: msg.body,
+              from: msg.from,
+              to: msg.to,
+              isGroup: msg.from.includes('@g.us'),
+              hasQuotedMsg: !!msg.hasQuotedMsg,
+              timestamp: new Date().toISOString()
+          });
+          // Get allowed groups from environment variable (comma-separated list)
+          const allowedGroups = process.env.ALLOWED_GROUPS ? process.env.ALLOWED_GROUPS.split(',').map(id => id.trim()) : ['120363406850649153@g.us'];
+          console.log('🔧 Allowed groups:', allowedGroups);
+          
+          const isGroup = msg.from.includes('@g.us');
+          const allowPrivateMessages = process.env.ALLOW_PRIVATE_MESSAGES === 'true';
+          
+          // Check if we should process private messages
+          if (!isGroup && !allowPrivateMessages) {
+              console.log('🚫 Private message filtered - private messages not enabled');
+              return;
+          }
+          
+          // If it's a group message, check if it's in the allowed groups list
+          if (isGroup) {
+              const groupId = msg.from;
+              if (!allowedGroups.includes(groupId)) {
+                  console.log(`🚫 Message from group ${groupId} filtered - not in allowed groups list`);
+                  return;
+              }
+              console.log(`✅ Message from allowed group: ${groupId}`);
+          } else {
+              console.log(`✅ Private message from: ${msg.from}`);
+          }
+          
+          const botPhoneNumber = process.env.BOT_PHONE_NUMBER;
+          if (!botPhoneNumber) {
+              console.error('❌ BOT_PHONE_NUMBER environment variable not set');
+              return;
+          }
+          
+          const webhookApiKey = process.env.WHATSAPP_API_KEY;
+          if (!webhookApiKey) {
+              console.error('❌ WHATSAPP_API_KEY environment variable not set');
+              return;
+          }
+
+          if (msg.to === botPhoneNumber) {
+              // Filter: Only forward messages containing Hebrew keywords חפש or מצא
+              // if (!msg.body.includes('חפש') && !msg.body.includes('מצא')) {
+              //     console.log('🚫 Message filtered - does not contain required Hebrew keywords');
+              //     return;
+              // }
+              
+              try {
+                  const webhookPayload = {
+                      message_id: msg.id._serialized,
+                      chat_id: msg.from,
+                      replied_message_id: msg.hasQuotedMsg ? msg._data.quotedStanzaID || null : null,
+                      is_group: msg.from.includes('@g.us'),
+                      message_text: msg.body
+                  };
+                  
+                  console.log('🔄 Forwarding to webhook v2:', webhookPayload);
+                  
+                  const webhookUrl = process.env.WHATSAPP_BOT_URL || 'http://localhost:8000/whatsapp/v2/webhook';
+                  const response = await fetch(webhookUrl, {
+                      method: 'POST',
+                      headers: {
+                          'Content-Type': 'application/json',
+                          'X-API-Key': webhookApiKey
+                      },
+                      body: JSON.stringify(webhookPayload)
+                  });
+                  
+                  if (response.ok) {
+                      console.log('✅ Webhook v2 call successful');
+                  } else {
+                      console.error('❌ Webhook v2 call failed:', response.status, response.statusText);
+                  }
+              } catch (error) {
+                  console.error('❌ Error calling webhook v2:', error);
+              }
+          }
+      });
+  } else {
+      console.log('🚫 Message handling disabled - no event handlers registered');
+  }
+
+  }
+
+
+let restartTimer = null;
+
+function scheduleRestart() {
+  if (restartTimer) return;
+  restartTimer = setTimeout(async () => {
+    restartTimer = null;
+    try {
+      await client.destroy().catch(() => {});
+    } catch (_) {}
+    createClient();
+  }, 2000);
+}
+
+let clientReady = false;
+
+
+async function protectNavigation(page) {
+  await page.setRequestInterception(true);
+
+  page.on('request', req => {
+    const url = req.url();
+
+    if (req.isNavigationRequest() && !url.startsWith('https://web.whatsapp.com')) {
+      console.warn('Blocked navigation to:', url);
+      return req.abort();
+    }
+    req.continue();
+  });
+}
+
 
 // Make client available to routes
 app.use((req, res, next) => {
@@ -370,7 +422,9 @@ const gracefulShutdown = async () => {
 process.on('SIGTERM', gracefulShutdown);
 process.on('SIGINT', gracefulShutdown);
 
-// Start server
+// Initialize client and start server
+createClient();
+
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`WhatsApp API Server running on port ${PORT}`);
   console.log(`Health check available at http://localhost:${PORT}/health`);
