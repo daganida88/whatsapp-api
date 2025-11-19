@@ -36,34 +36,54 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // Initialize Session Manager
 // Simple WhatsApp client setup - like code sample
 const clientConfig = {
-    authStrategy: new LocalAuth({
-        dataPath: '/app/session_data'
-    }),
-    puppeteer: {
-        headless: true,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--no-first-run',
-            '--disable-extensions',
-            '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-renderer-backgrounding',
-            '--disable-features=TranslateUI',
-            '--disable-web-security',
-            '--disable-features=VizDisplayCompositor',
-            '--user-data-dir=/app/session_data/session',
-        ],
-        executablePath: process.env.CHROME_BIN || '/usr/bin/chromium-browser'
-    },
-        // strongly recommended right now to avoid WA web version issues:
-    webVersionCache: {
-      type: 'remote',
-      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
-    }
+  // 1. Handle Session Storage
+  authStrategy: new LocalAuth({
+      dataPath: '/app/session_data'
+  }),
+
+  // 2. Vital Options for Stability
+  options: {
+      // Setting a fixed userAgent is critical. It stops WA from identifying 
+      // the bot as "HeadlessChrome", which prevents forced refreshes/disconnects.
+      userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'
+  },
+
+  // 3. Puppeteer Config
+  puppeteer: {
+      headless: true, // Try 'new' if you are on Puppeteer v19+, otherwise true
+      args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage', // Fixes the Docker memory crash
+          '--disable-gpu',
+          '--no-first-run',
+          '--disable-extensions',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-web-security',
+          '--disable-features=TranslateUI,VizDisplayCompositor',
+          
+          // --- CRITICAL FIX HERE ---
+          // I removed '--user-data-dir=/app/session_data/session'
+          // because LocalAuth above is already doing this. 
+          // Having both causes the crash/CPU loop.
+      ],
+      executablePath: process.env.CHROME_BIN || '/usr/bin/chromium-browser'
+  },
+
+  // 4. Web Version
+  // I have commented this out. Using a hardcoded version is the #1 cause 
+  // of "Context Destroyed" loops when WhatsApp updates their server.
+  // Let the library fetch the latest compatible version automatically.
+  /*
+  webVersionCache: {
+    type: 'remote',
+    remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+  }
+  */
 };
+
 
 if (process.env.PROXY_SERVER) {
     console.log("🌐 Configuring proxy server");
