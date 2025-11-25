@@ -299,19 +299,24 @@ let clientReady = false;
 
 
 async function protectNavigation(page) {
+  // Ensure interception is enabled
   await page.setRequestInterception(true);
 
   page.on('request', req => {
+    // CRITICAL FIX: Stop if the request was already handled by whatsapp-web.js
+    if (req.isInterceptResolutionHandled()) return;
+
     const url = req.url();
 
     if (req.isNavigationRequest() && !url.startsWith('https://web.whatsapp.com')) {
       console.warn('Blocked navigation to:', url);
       return req.abort();
     }
+    
+    // Only continue if we haven't aborted above
     req.continue();
   });
 }
-
 
 // Make client available to routes
 app.use((req, res, next) => {
