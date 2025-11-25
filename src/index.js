@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcodeTerminal = require('qrcode-terminal');
 const fetch = require('node-fetch');
+const ProxyChain = require('proxy-chain');
 require('dotenv').config();
 
 const messageRoutes = require('./routes/messages');
@@ -35,73 +36,81 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Initialize Session Manager
 // Simple WhatsApp client setup - like code sample
-const clientConfig = {
-  // 1. Handle Session Storage
-  authStrategy: new LocalAuth({
-      dataPath: '/app/session_data'
-  }),
+// Base client configuration (will be extended with proxy if needed)
+function getBaseClientConfig() {
+  return {
+    // 1. Handle Session Storage
+    authStrategy: new LocalAuth({
+        dataPath: '/app/session_data'
+    }),
 
-  // 2. Vital Options for Stability
-  options: {
-      // Setting a fixed userAgent is critical. It stops WA from identifying 
-      // the bot as "HeadlessChrome", which prevents forced refreshes/disconnects.
-      userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'
-  },
+    // 2. Vital Options for Stability
+    options: {
+        // Setting a fixed userAgent is critical. It stops WA from identifying
+        // the bot as "HeadlessChrome", which prevents forced refreshes/disconnects.
+        userAgent: 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'
+    },
 
-  // 3. Puppeteer Config
-  puppeteer: {
-      headless: true, // Try 'new' if you are on Puppeteer v19+, otherwise true
-      args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage', // Fixes the Docker memory crash
-          '--disable-gpu',
-          '--no-first-run',
-          '--disable-extensions',
-          '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-renderer-backgrounding',
-          '--disable-web-security',
-          '--disable-features=TranslateUI,VizDisplayCompositor',
-          
-          // --- CRITICAL FIX HERE ---
-          // I removed '--user-data-dir=/app/session_data/session'
-          // because LocalAuth above is already doing this. 
-          // Having both causes the crash/CPU loop.
-      ],
-      executablePath: process.env.CHROME_BIN || '/usr/bin/chromium-browser'
-  },
+    // 3. Puppeteer Config
+    puppeteer: {
+        headless: true, // Try 'new' if you are on Puppeteer v19+, otherwise true
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage', // Fixes the Docker memory crash
+            '--disable-gpu',
+            '--no-first-run',
+            '--disable-extensions',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--disable-renderer-backgrounding',
+            '--disable-web-security',
+            '--disable-features=TranslateUI,VizDisplayCompositor',
 
-  // 4. Web Version
-  // I have commented this out. Using a hardcoded version is the #1 cause 
-  // of "Context Destroyed" loops when WhatsApp updates their server.
-  // Let the library fetch the latest compatible version automatically.
-  /*
-  webVersionCache: {
-    type: 'remote',
-    remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
-  }
-  */
-};
+            // --- CRITICAL FIX HERE ---
+            // I removed '--user-data-dir=/app/session_data/session'
+            // because LocalAuth above is already doing this.
+            // Having both causes the crash/CPU loop.
+        ],
+        executablePath: process.env.CHROME_BIN || '/usr/bin/chromium-browser'
+    },
 
-
-if (process.env.PROXY_SERVER) {
-    console.log("🌐 Configuring proxy server");
-    
-    // Check if proxy URL already contains authentication (like http://user:pass@host:port)
-    const hasEmbeddedAuth = process.env.PROXY_SERVER.includes('@');
-    
-    if (hasEmbeddedAuth) {
-        // Use proxy URL with embedded authentication
-        console.log('🔐 Using embedded proxy authentication');
-        clientConfig.puppeteer.args.push(`--proxy-server=${process.env.PROXY_SERVER}`);
+    // 4. Web Version
+    // I have commented this out. Using a hardcoded version is the #1 cause
+    // of "Context Destroyed" loops when WhatsApp updates their server.
+    // Let the library fetch the latest compatible version automatically.
+    /*
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
     }
+    */
+  };
 }
-
 
 let client;
 
-function createClient() {
+async function createClient() {
+  const clientConfig = getBaseClientConfig();
+
+  // Handle proxy configuration with anonymization
+  if (process.env.PROXY_SERVER) {
+    console.log("🌐 Configuring proxy server");
+
+    try {
+      // Anonymize the proxy using ProxyChain
+      const anonymizedProxy = await ProxyChain.anonymizeProxy(process.env.PROXY_SERVER);
+      console.log(`🔐 Proxy anonymized: ${anonymizedProxy}`);
+
+      // Add the anonymized proxy to puppeteer args
+      clientConfig.puppeteer.args.push(`--proxy-server=${anonymizedProxy}`);
+    } catch (error) {
+      console.error("❌ Failed to anonymize proxy:", error);
+      // Fallback to direct proxy if anonymization fails
+      clientConfig.puppeteer.args.push(`--proxy-server=${process.env.PROXY_SERVER}`);
+    }
+  }
+
   client = new Client(clientConfig);
   attachClientHandlers(client);
   client.initialize();
