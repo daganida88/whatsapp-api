@@ -478,15 +478,17 @@ router.post('/forward-message', authenticateAPI, async (req, res) => {
     }
 
     console.log(`[FORWARD] Message found, forwarding to: ${toChatId}`);
-    
-    // Forward the message
-    await message.forward(toChatId);
-    
-    console.log(`[FORWARD] Message forwarded successfully from ${messageId} to ${toChatId}`);
-    
+
+    // Forward the message (fire-and-forget for faster response)
+    message.forward(toChatId).catch(err => {
+      console.error(`[FORWARD] Background forward failed for ${messageId} to ${toChatId}:`, err);
+    });
+
+    console.log(`[FORWARD] Message forward initiated from ${messageId} to ${toChatId}`);
+
     res.json({
       success: true,
-      message: 'Message forwarded successfully',
+      message: 'Message forward initiated',
       data: {
         originalMessageId: messageId,
         forwardedTo: toChatId
