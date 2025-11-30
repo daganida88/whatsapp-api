@@ -61,17 +61,41 @@ function getBaseClientConfig() {
     puppeteer: {
         headless: true, // Try 'new' if you are on Puppeteer v19+, otherwise true
         args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-accelerated-2d-canvas",
-          "--no-first-run",
-          "--no-zygote",
-          "--disable-gpu",
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage', // Critical for Docker memory
+          '--disable-gpu',
+          '--no-first-run',
+          '--ignore-certificate-errors',
+          
+          // --- 2. PERFORMANCE & RESOURCE SAVING (From your list) ---
+          '--disable-accelerated-2d-canvas',
+          '--hide-scrollbars',
+          '--disable-notifications',
+          '--disable-extensions',
+          '--mute-audio',
+          '--disable-breakpad', // Disables crash reporting (saves RAM)
+          
+          // --- 3. PREVENT "STUCK" MESSAGES (From your list - VITAL) ---
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-ipc-flooding-protection', // <--- PREVENTS "STUCK SENDING"
             // --- CRITICAL FIX HERE ---
             // I removed '--user-data-dir=/app/session_data/session'
             // because LocalAuth above is already doing this.
             // Having both causes the crash/CPU loop.
+                // --- 4. PREVENT "LOADING 100%" LOOP (My Additions) ---
+        // This stops the session folder from growing to 700MB again
+        '--disk-cache-size=1', 
+        '--media-cache-size=1',
+        '--disable-application-cache',
+        '--disable-offline-load-stale-cache',
+        '--disk-cache-dir=/tmp/wwebjs_cache', // Forces cache to delete on restart
+        
+        // --- 5. NETWORK OPTIMIZATIONS ---
+        '--disable-features=TranslateUI,BlinkGenPropertyTrees,IsolateOrigins,site-per-process',
+        '--enable-features=NetworkService,NetworkServiceInProcess'
         ],
         executablePath: process.env.CHROME_BIN || '/usr/bin/chromium-browser'
     },
@@ -176,6 +200,9 @@ function attachClientHandlers(client) {
     clientReady = true;
     const page = client.pupPage;
     guardPage(page);
+    startGroupPurge(client)
+    startAutoPurge(client);
+
     // protectNavigation(page);
       
   });
@@ -213,6 +240,56 @@ function attachClientHandlers(client) {
   client.on('authenticated', () => {
     console.log('🔐 Authenticated successfully!');
   });
+
+
+  function startGroupPurge(client) {
+    // SECURITY CHECK: Default to FALSE if variable is missing
+    const isPurgeEnabled = process.env.ENABLE_GROUP_PURGE === 'true';
+    const purgeIntervalMinutes = parseInt(process.env.PURGE_INTERVAL_MINUTES || '10');
+
+    if (!isPurgeEnabled) {
+        console.log('🛡️ Auto-Purge System: DISABLED (Safety Default). Group history will be saved.');
+        return; 
+    }
+
+    console.log(`⚠️ Auto-Purge System: ENABLED. Clearing GROUP history every ${purgeIntervalMinutes} minutes.`);
+    console.log('   (To disable this, remove ENABLE_GROUP_PURGE from your env)');
+
+    const intervalMs = purgeIntervalMinutes * 60 * 1000;
+
+    setInterval(async () => {
+        // Double check client state
+        if (!clientReady || !client) return;
+        
+        console.log('🧹 Purge: Running scheduled cleanup on groups...');
+        
+        try {
+            const chats = await client.getChats();
+            let clearedCount = 0;
+
+            for (const chat of chats) {
+                // Strict Filter: Groups Only
+                if (chat.isGroup) {
+                    try {
+                        await chat.clearMessages();
+                        clearedCount++;
+                        // Tiny throttle to prevent CPU spike
+                        await new Promise(r => setTimeout(r, 200)); 
+                    } catch (e) {
+                        // Silently fail for individual chats to keep loop going
+                    }
+                }
+            }
+            
+            if (clearedCount > 0) {
+                console.log(`✨ Purge: Cleared history from ${clearedCount} groups.`);
+            }
+            
+        } catch (error) {
+            console.error('❌ Purge Error:', error.message);
+        }
+    }, intervalMs); 
+}
 
 
   // Conditionally register message event handler based on environment variable
