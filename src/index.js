@@ -61,22 +61,13 @@ function getBaseClientConfig() {
     puppeteer: {
         headless: true, // Try 'new' if you are on Puppeteer v19+, otherwise true
         args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage', // Fixes the Docker memory crash
-            '--disable-gpu',
-            '--disable-software-rasterizer',
-            '--no-first-run',
-            '--disable-extensions',
-            '--single-process', // Strictly for Linux/Docker stability
-            '--no-zygote', // Helps with memory
-            '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
-            '--disable-accelerated-2d-canvas', // Reduces graphics processing
-            '--disable-renderer-backgrounding',
-            '--disable-web-security',
-            '--disable-features=TranslateUI,VizDisplayCompositor',
-
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-accelerated-2d-canvas",
+          "--no-first-run",
+          "--no-zygote",
+          "--disable-gpu",
             // --- CRITICAL FIX HERE ---
             // I removed '--user-data-dir=/app/session_data/session'
             // because LocalAuth above is already doing this.
