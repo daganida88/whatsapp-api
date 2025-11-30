@@ -144,6 +144,7 @@ function guardPage(page) {
   });
 }
 
+let watchdogInterval = null;
 
 // Add this function
 function startWatchdog() {
