@@ -43,6 +43,12 @@ function getBaseClientConfig() {
     authStrategy: new LocalAuth({
         dataPath: '/app/session_data'
     }),
+    // 👇 ADD THIS LINE (0 = Infinite wait, Default is 60000ms)
+    authTimeoutMs: 0, 
+
+    // 👇 ADD THIS TOO (Give Puppeteer more time to attach)
+    qrMaxRetries: 0, 
+
 
     // 2. Vital Options for Stability
     options: {

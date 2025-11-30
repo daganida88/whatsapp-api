@@ -47,4 +47,4 @@ HEALTHCHECK --interval=30s --timeout=30s --start-period=60s --retries=3 \
 EXPOSE 3000
 
 # Start the application
-CMD ["node", "src/index.js"]
+CMD ["node","--max-old-space-size=4096","src/index.js"]
