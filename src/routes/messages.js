@@ -8,6 +8,22 @@ const router = express.Router();
 // API Key from environment
 const WHATSAPP_API_KEY = process.env.WHATSAPP_API_KEY;
 
+// Helper function to race a promise
+const withTimeout = (promise, ms) => {
+  let timeoutId;
+  const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+          reject(new Error(`Operation timed out after ${ms}ms`));
+      }, ms);
+  });
+
+  return Promise.race([
+      promise,
+      timeoutPromise
+  ]).finally(() => clearTimeout(timeoutId));
+};
+
+
 // Authentication middleware
 const authenticateAPI = (req, res, next) => {
     console.log(`[AUTH] Checking API key for ${req.method} ${req.path}`);
