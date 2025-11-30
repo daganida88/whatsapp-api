@@ -59,10 +59,14 @@ function getBaseClientConfig() {
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage', // Fixes the Docker memory crash
             '--disable-gpu',
+            '--disable-software-rasterizer',
             '--no-first-run',
             '--disable-extensions',
+            '--single-process', // Strictly for Linux/Docker stability
+            '--no-zygote', // Helps with memory
             '--disable-background-timer-throttling',
             '--disable-backgrounding-occluded-windows',
+            '--disable-accelerated-2d-canvas', // Reduces graphics processing
             '--disable-renderer-backgrounding',
             '--disable-web-security',
             '--disable-features=TranslateUI,VizDisplayCompositor',
@@ -114,12 +118,13 @@ async function createClient() {
   client = new Client(clientConfig);
   attachClientHandlers(client);
   client.initialize();
+  startWatchdog(); 
 }
 
 function guardPage(page) {
   page.on('error', err => {
     console.error('Puppeteer page error:', err);
-    scheduleRestart();
+    scheduleRestart();x
   });
 
   page.on('pageerror', err => {
@@ -140,13 +145,40 @@ function guardPage(page) {
 }
 
 
+// Add this function
+function startWatchdog() {
+  if (watchdogInterval) clearInterval(watchdogInterval);
+  
+  watchdogInterval = setInterval(async () => {
+      if (!clientReady || !client) return;
+
+      // Create a timeout promise
+      const timeout = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Timeout')), 10000)
+      );
+
+      try {
+          // Try to evaluate a simple script in the browser
+          // If the browser is "stuck", this will hang.
+          // We race it against the timeout.
+          await Promise.race([
+              client.pupPage.evaluate(() => 1 + 1),
+              timeout
+          ]);
+      } catch (error) {
+          console.error('🚨 Watchdog Alert: Browser is unresponsive/stuck. Restarting...');
+          scheduleRestart();
+      }
+  }, 60000); // Check every 60 seconds
+}
+
 function attachClientHandlers(client) {
   client.on('ready', () => {
     console.log('✅ WhatsApp client is ready!');
     clientReady = true;
     const page = client.pupPage;
     guardPage(page);
-    protectNavigation(page);
+    // protectNavigation(page);
       
   });
 

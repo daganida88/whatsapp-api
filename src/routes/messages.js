@@ -339,7 +339,7 @@ router.post('/send-text', authenticateAPI, validateBody(textMessageSchema), vali
   }
 });
 
-// Send media (URL only)
+
 router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), validateSession, async (req, res) => {
   try {
     console.log(`[SEND-MEDIA] Starting send media request`);
@@ -347,162 +347,168 @@ router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), va
     const client = req.client;
         
     if (!media) {
-      console.log(`[SEND-MEDIA] Media is required`);
-      return res.status(400).json({
-        error: true,
-        message: 'Media URL or local path is required',
-        providedMedia: media,
-        timestamp: new Date().toISOString()
-      });
+      return res.status(400).json({ error: true, message: 'Media URL/path required' });
     }
     
     const chatId = phone.includes('@') ? phone : `${phone}@c.us`;
-    console.log(`[SEND-MEDIA] Formatted chat ID: ${chatId}`);
     
     let mediaObj;
-    if (media.startsWith('http')) {
-      console.log(`[SEND-MEDIA] Fetching media from URL: ${media}`);
-      mediaObj = await MessageMedia.fromUrl(media, { unsafeMime: true });
-      console.log(`[SEND-MEDIA] Media fetched from URL, type: ${mediaObj.mimetype}`);
-    } else if (media.startsWith('data:') || req.body.base64Data) {
-      console.log(`[SEND-MEDIA] Creating media from base64 data`);
-      const mimeType = req.body.mimeType || 'image/jpeg';
-      const base64Data = req.body.base64Data || media.split(',')[1]; // Handle data:image/jpeg;base64,... format
-      mediaObj = new MessageMedia(mimeType, base64Data);
-      console.log(`[SEND-MEDIA] Media created from base64, type: ${mediaObj.mimetype}`);
-    } else {
-      console.log(`[SEND-MEDIA] Loading media from local path: ${media}`);
-      try {
-        mediaObj = MessageMedia.fromFilePath(media);
-        console.log(`[SEND-MEDIA] Media loaded from file, type: ${mediaObj.mimetype}`);
-      } catch (fileError) {
-        console.log(`[SEND-MEDIA] File not found: ${media}`, fileError.message);
+
+    // 1. TIMEOUT FOR DOWNLOADING MEDIA (30 Seconds Max)
+    try {
+        if (media.startsWith('http')) {
+          console.log(`[SEND-MEDIA] Fetching media from URL...`);
+          // Wrap the download in a timeout
+          mediaObj = await withTimeout(
+            MessageMedia.fromUrl(media, { unsafeMime: true }), 
+            30000, 
+            "Download Media"
+          );
+        } else if (media.startsWith('data:') || req.body.base64Data) {
+          const mimeType = req.body.mimeType || 'image/jpeg';
+          const base64Data = req.body.base64Data || media.split(',')[1];
+          mediaObj = new MessageMedia(mimeType, base64Data);
+        } else {
+          mediaObj = MessageMedia.fromFilePath(media);
+        }
+    } catch (err) {
+        console.error(`[SEND-MEDIA] Media Loading Failed: ${err.message}`);
         return res.status(400).json({
-          error: true,
-          message: 'File not found or cannot be read',
-          providedPath: media,
-          timestamp: new Date().toISOString()
+             error: true, 
+             message: 'Failed to load media (timeout or bad URL)',
+             details: err.message 
         });
-      }
     }
     
-    console.log("[SEND-MEDIA] Sending message");
+    console.log("[SEND-MEDIA] Sending message to WhatsApp...");
     
     let result;
     
-    if (message_id_to_reply) {
-      // Get the message to reply to and use reply method
-      const messageToReply = await client.getMessageById(message_id_to_reply);
-      result = await messageToReply.reply(mediaObj, undefined, { caption });
-    } else {
-      // Send regular message
-      const options = {
-        sendSeen: false,
-        linkPreview: false,
-        parseVCards: false,
-      };
-      if (caption) {
-        options.caption = caption;
-      }
-      result = await client.sendMessage(chatId, mediaObj, options);
+    // 2. TIMEOUT FOR SENDING MESSAGE (60 Seconds Max)
+    // Sending media is heavy. If Chrome hangs, we want to know.
+    try {
+        const sendPromise = message_id_to_reply 
+            ? (await client.getMessageById(message_id_to_reply)).reply(mediaObj, undefined, { caption })
+            : client.sendMessage(chatId, mediaObj, { 
+                caption: caption, 
+                sendSeen: false,
+                linkPreview: false 
+              });
+
+        result = await withTimeout(sendPromise, 60000, "Send To WhatsApp");
+
+    } catch (err) {
+        console.error(`[SEND-MEDIA] Send Failed: ${err.message}`);
+        
+        // If this times out, it usually means the browser is unresponsive.
+        // You might want to trigger a restart here if you have logic for it.
+        return res.status(504).json({
+            error: true,
+            message: 'Sending timed out. The phone might be disconnected or the file is too large.',
+            details: err.message
+        });
     }
-    console.log(`[SEND-MEDIA] Message sent successfully, ID: ${result.id._serialized}`);
+
+    console.log(`[SEND-MEDIA] Success! ID: ${result.id._serialized}`);
     
     res.json({
       success: true,
       messageId: result.id._serialized,
-      timestamp: new Date().toISOString(),
-      data: {
-        phone: chatId,
-        caption: caption || '',
-        mediaUrl: media,
-        replyTo: message_id_to_reply || null
-      }
+      timestamp: new Date().toISOString()
     });
     
   } catch (error) {
-    console.error(`[SEND-MEDIA] Error:`, error);
+    console.error(`[SEND-MEDIA] Critical Error:`, error);
     res.status(500).json({
       error: true,
-      message: 'Failed to send media',
-      details: error.message,
-      errorStack: error.stack,
-      timestamp: new Date().toISOString()
+      message: 'Internal Server Error',
+      details: error.message
     });
   }
 });
 
 
-// Forward message endpoint
 router.post('/forward-message', authenticateAPI, async (req, res) => {
   try {
     const { messageId, toChatId } = req.body;
     
     console.log(`[FORWARD] Starting forward request - MessageId: ${messageId}, ToChatId: ${toChatId}`);
     
-    // Validate required fields
     if (!messageId || !toChatId) {
-      console.log('[FORWARD] Validation failed - Missing required fields');
       return res.status(400).json({
         error: true,
-        message: 'Missing required fields: messageId and toChatId are required',
-        timestamp: new Date().toISOString()
+        message: 'Missing required fields: messageId and toChatId'
       });
     }
 
-    // Get the client
     const client = req.client;
-    const clientReady = req.clientReady;
     
-    if (!client || !clientReady || !client.info) {
-      console.log(`[FORWARD] Client is not ready`);
-      return res.status(400).json({
-        error: true,
-        message: 'Client is not ready',
-        timestamp: new Date().toISOString()
-      });
-    }
+    // 1. Format the destination ID correctly
+    // If user sends "12345", we convert to "12345@c.us". If group, they must send "@g.us"
+    const targetChatId = toChatId.includes('@') ? toChatId : `${toChatId}@c.us`;
 
     console.log(`[FORWARD] Getting message by ID: ${messageId}`);
     
-    // Get the message by ID
-    const message = await client.getMessageById(messageId);
+    // 2. TIMEOUT FOR FINDING MESSAGE (10 Seconds)
+    // This talks to the browser, so it MUST have a timeout
+    let message;
+    try {
+        message = await withTimeout(
+            client.getMessageById(messageId), 
+            10000, 
+            "Find Message"
+        );
+    } catch (err) {
+        console.error(`[FORWARD] Failed to find message: ${err.message}`);
+        return res.status(404).json({
+            error: true,
+            message: 'Could not retrieve original message (Timeout or Not Found)',
+            details: err.message
+        });
+    }
     
     if (!message) {
-      console.log(`[FORWARD] Message not found: ${messageId}`);
-      return res.status(404).json({
-        error: true,
-        message: 'Message not found',
-        timestamp: new Date().toISOString()
-      });
+      return res.status(404).json({ error: true, message: 'Message not found' });
     }
 
-    console.log(`[FORWARD] Message found, forwarding to: ${toChatId}`);
+    console.log(`[FORWARD] Message found. Forwarding to ${targetChatId}...`);
 
-    // Forward the message (fire-and-forget for faster response)
-    message.forward(toChatId).catch(err => {
-      console.error(`[FORWARD] Background forward failed for ${messageId} to ${toChatId}:`, err);
-    });
+    // 3. TIMEOUT FOR FORWARDING (20 Seconds)
+    // I removed the "Fire-and-Forget" logic.
+    // It is better to await this so we know if the browser actually sent it.
+    try {
+        await withTimeout(
+            message.forward(targetChatId), 
+            20000, 
+            "Forward Message"
+        );
+    } catch (err) {
+        console.error(`[FORWARD] Forwarding failed: ${err.message}`);
+        return res.status(504).json({
+            error: true,
+            message: 'Forwarding operation timed out or failed',
+            details: err.message
+        });
+    }
 
-    console.log(`[FORWARD] Message forward initiated from ${messageId} to ${toChatId}`);
+    console.log(`[FORWARD] Message forward successful`);
 
     res.json({
       success: true,
-      message: 'Message forward initiated',
+      message: 'Message forwarded successfully',
       data: {
         originalMessageId: messageId,
-        forwardedTo: toChatId
+        forwardedTo: targetChatId
       },
       timestamp: new Date().toISOString()
     });
     
   } catch (error) {
-    console.error(`[FORWARD] Error forwarding message:`, error);
+    console.error(`[FORWARD] Critical Error:`, error);
     res.status(500).json({
       error: true,
-      message: 'Failed to forward message',
-      details: error.message,
-      timestamp: new Date().toISOString()
+      message: 'Internal Server Error',
+      details: error.message
     });
   }
 });
