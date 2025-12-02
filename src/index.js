@@ -80,18 +80,6 @@ function getBaseClientConfig() {
           '--disable-background-timer-throttling',
           '--disable-backgrounding-occluded-windows',
           '--disable-renderer-backgrounding',
-          '--disable-ipc-flooding-protection', // <--- PREVENTS "STUCK SENDING"
-            // --- CRITICAL FIX HERE ---
-            // I removed '--user-data-dir=/app/session_data/session'
-            // because LocalAuth above is already doing this.
-            // Having both causes the crash/CPU loop.
-                // --- 4. PREVENT "LOADING 100%" LOOP (My Additions) ---
-        // This stops the session folder from growing to 700MB again
-        '--disk-cache-size=1', 
-        '--media-cache-size=1',
-        '--disable-application-cache',
-        '--disable-offline-load-stale-cache',
-        '--disk-cache-dir=/tmp/wwebjs_cache', // Forces cache to delete on restart
         
         // --- 5. NETWORK OPTIMIZATIONS ---
         '--disable-features=TranslateUI,BlinkGenPropertyTrees,IsolateOrigins,site-per-process',
