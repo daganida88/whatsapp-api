@@ -245,7 +245,7 @@ function attachClientHandlers(client) {
   function startGroupPurge(client) {
     // SECURITY CHECK: Default to FALSE if variable is missing
     const isPurgeEnabled = process.env.ENABLE_GROUP_PURGE === 'true';
-    const purgeIntervalMinutes = parseInt(process.env.PURGE_INTERVAL_MINUTES || '10');
+    const purgeIntervalMinutes = parseInt(process.env.PURGE_INTERVAL_MINUTES || '1440 ');
 
     if (!isPurgeEnabled) {
         console.log('🛡️ Auto-Purge System: DISABLED (Safety Default). Group history will be saved.');
