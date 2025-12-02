@@ -381,8 +381,23 @@ router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), va
             "Download Media"
           );
         } else if (media.startsWith('data:') || req.body.base64Data) {
-          const mimeType = req.body.mimeType || 'image/jpeg';
-          const base64Data = req.body.base64Data || media.split(',')[1];
+          let mimeType = req.body.mimeType || 'image/jpeg';
+          let base64Data = req.body.base64Data;
+
+          // Extract MIME type and base64 data from data URL if provided
+          if (media.startsWith('data:')) {
+            // Parse data URL: "data:image/jpeg;base64,/9j/4AAQ..."
+            const matches = media.match(/^data:([^;]+);base64,(.+)$/);
+            if (matches) {
+              mimeType = matches[1];  // e.g., "image/jpeg" or "video/mp4"
+              base64Data = matches[2];
+            } else {
+              // Fallback: just split by comma
+              base64Data = media.split(',')[1];
+            }
+          }
+
+          console.log(`[SEND-MEDIA] Using base64 data with MIME type: ${mimeType}`);
           mediaObj = new MessageMedia(mimeType, base64Data);
         } else {
           mediaObj = MessageMedia.fromFilePath(media);
