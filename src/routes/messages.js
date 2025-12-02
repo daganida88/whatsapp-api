@@ -426,7 +426,7 @@ router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), va
                 linkPreview: false 
               });
 
-        result = await withTimeout(sendPromise, 60000, "Send To WhatsApp");
+        result = await withTimeout(sendPromise, 180000, "Send To WhatsApp");
 
     } catch (err) {
         console.error(`[SEND-MEDIA] Send Failed: ${err.message}`);
