@@ -59,7 +59,8 @@ function getBaseClientConfig() {
 
     // 3. Puppeteer Config
     puppeteer: {
-        headless: true, // Try 'new' if you are on Puppeteer v19+, otherwise true
+        headless: 'shell', // New headless mode - more stable, behaves like real browser
+        protocolTimeout: 0, 
         args: [
           '--no-sandbox',
           '--disable-setuid-sandbox',
