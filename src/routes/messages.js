@@ -430,7 +430,7 @@ router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), va
     // Sending media is heavy. If Chrome hangs, we want to know.
     try {
         const sendPromise = message_id_to_reply 
-            ? (await client.getMessageById(message_id_to_reply)).reply(mediaObj, undefined, { caption })
+            ? (await client.getMessageById(message_id_to_reply)).reply(mediaObj, undefined, { caption, sendSeen: false })
             : client.sendMessage(chatId, mediaObj, { 
                 caption: caption, 
                 sendSeen: false,
