@@ -88,6 +88,10 @@ function getBaseClientConfig() {
         ],
         executablePath: process.env.CHROME_BIN || '/usr/bin/chromium-browser'
     },
+    webVersionCache: {
+      type: 'remote',
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+  }
 
     // 4. Web Version
     // I have commented this out. Using a hardcoded version is the #1 cause
