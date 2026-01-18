@@ -339,10 +339,10 @@ router.post('/send-text', authenticateAPI, validateBody(textMessageSchema), vali
     if (message_id_to_reply) {
       // Get the message to reply to and use reply method
       const messageToReply = await client.getMessageById(message_id_to_reply);
-      result = await messageToReply.reply(message);
+      result = await messageToReply.reply(message, undefined, { sendSeen: false });
     } else {
       // Send regular message
-      result = await client.sendMessage(chatId, message);
+      result = await client.sendMessage(chatId, message, { sendSeen: false });
     }
     
     res.json({
