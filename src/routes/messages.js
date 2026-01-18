@@ -339,10 +339,14 @@ router.post('/send-text', authenticateAPI, validateBody(textMessageSchema), vali
     if (message_id_to_reply) {
       // Get the message to reply to and use reply method
       const messageToReply = await client.getMessageById(message_id_to_reply);
-      result = await messageToReply.reply(message, undefined, { sendSeen: false });
+      result = await messageToReply.reply(message, undefined, { 
+        sendSeen: false, // TEMPORARY: Workaround for whatsapp-web.js issue #5718. Remove once resolved.
+      });
     } else {
       // Send regular message
-      result = await client.sendMessage(chatId, message, { sendSeen: false });
+      result = await client.sendMessage(chatId, message, { 
+        sendSeen: false, // TEMPORARY: Workaround for whatsapp-web.js issue #5718. Remove once resolved.
+      });
     }
     
     res.json({
@@ -430,10 +434,13 @@ router.post('/send-media', authenticateAPI, validateBody(mediaMessageSchema), va
     // Sending media is heavy. If Chrome hangs, we want to know.
     try {
         const sendPromise = message_id_to_reply 
-            ? (await client.getMessageById(message_id_to_reply)).reply(mediaObj, undefined, { caption, sendSeen: false })
+            ? (await client.getMessageById(message_id_to_reply)).reply(mediaObj, undefined, { 
+                caption, 
+                sendSeen: false, // TEMPORARY: Workaround for whatsapp-web.js issue #5718. Remove once resolved.
+              })
             : client.sendMessage(chatId, mediaObj, { 
                 caption: caption, 
-                sendSeen: false,
+                sendSeen: false, // TEMPORARY: Workaround for whatsapp-web.js issue #5718. Remove once resolved.
                 linkPreview: false 
               });
 
