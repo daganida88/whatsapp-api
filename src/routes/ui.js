@@ -280,7 +280,7 @@ router.get('/', (req, res) => {
     <div class="container">
         <div class="header">
             <h1>🚀 WhatsApp API Dashboard</h1>
-            <p>Manage your WhatsApp sessions and browse your chats & groups</p>
+            <p>Manage your WhatsApp sessions and browse your groups</p>
         </div>
 
         <div class="sessions-container" id="sessions-container">
@@ -335,7 +335,7 @@ router.get('/', (req, res) => {
                         </div>
                         <div class="controls">
                             <button class="btn" onclick="loadChats('\${sessionId}')" \${!isReady ? 'disabled' : ''}>
-                                📋 Load Chats & Groups
+                                📋 Load Groups
                             </button>
                             <button class="btn btn-secondary" onclick="refreshSession('\${sessionId}')">
                                 🔄 Refresh Status
@@ -372,45 +372,36 @@ router.get('/', (req, res) => {
 
         function renderChats(container) {
             if (filteredChats.length === 0) {
-                container.innerHTML = '<div class="empty-state">No chats found</div>';
+                container.innerHTML = '<div class="empty-state">No groups found</div>';
                 return;
             }
 
-            const groups = filteredChats.filter(chat => chat.isGroup);
-            const contacts = filteredChats.filter(chat => !chat.isGroup);
-
             const html = \`
-                <input type="text" class="search-box" placeholder="🔍 Search chats and groups..." onkeyup="filterChats(this.value)">
-                
-                <div class="tabs">
-                    <button class="tab active" onclick="showTab('all')">All (\${filteredChats.length})</button>
-                    <button class="tab" onclick="showTab('groups')">Groups (\${groups.length})</button>
-                    <button class="tab" onclick="showTab('contacts')">Contacts (\${contacts.length})</button>
+                <input type="text" class="search-box" placeholder="🔍 Search groups..." onkeyup="filterChats(this.value)">
+
+                <div style="padding: 0.5rem 0; color: #6c757d; font-size: 0.9rem;">
+                    Found \${filteredChats.length} groups
                 </div>
-                
+
                 <div class="chat-list" id="chat-list">
                     \${renderChatList(filteredChats)}
                 </div>
             \`;
-            
+
             container.innerHTML = html;
         }
 
         function renderChatList(chats) {
             return chats.map(chat => {
-                const badge = chat.isGroup ? 
-                    \`<span class="group-badge">GROUP</span>\` : 
-                    \`<span class="contact-badge">CONTACT</span>\`;
-                
-                const participants = chat.isGroup ? \` • \${chat.participants} members\` : '';
+                const participants = \` • \${chat.participants} members\`;
                 const lastMsg = chat.lastMessage ? chat.lastMessage : 'No messages';
-                
+
                 return \`
                     <div class="chat-item">
                         <div class="chat-info">
                             <div class="chat-name">
                                 \${chat.name}
-                                \${badge}
+                                <span class="group-badge">GROUP</span>
                             </div>
                             <div class="chat-id">\${chat.id}</div>
                             <div class="chat-meta">
@@ -425,42 +416,14 @@ router.get('/', (req, res) => {
 
         function filterChats(searchTerm) {
             const term = searchTerm.toLowerCase();
-            filteredChats = allChats.filter(chat => 
-                chat.name.toLowerCase().includes(term) || 
+            filteredChats = allChats.filter(chat =>
+                chat.name.toLowerCase().includes(term) ||
                 chat.id.toLowerCase().includes(term) ||
                 chat.lastMessage.toLowerCase().includes(term)
             );
-            
+
             const chatList = document.getElementById('chat-list');
             chatList.innerHTML = renderChatList(filteredChats);
-            
-            // Update tab counts
-            const groups = filteredChats.filter(chat => chat.isGroup);
-            const contacts = filteredChats.filter(chat => !chat.isGroup);
-            document.querySelector('.tabs').innerHTML = \`
-                <button class="tab active" onclick="showTab('all')">All (\${filteredChats.length})</button>
-                <button class="tab" onclick="showTab('groups')">Groups (\${groups.length})</button>
-                <button class="tab" onclick="showTab('contacts')">Contacts (\${contacts.length})</button>
-            \`;
-        }
-
-        function showTab(type) {
-            // Update active tab
-            document.querySelectorAll('.tab').forEach(tab => tab.classList.remove('active'));
-            event.target.classList.add('active');
-            
-            // Filter chats
-            let chatsToShow = [];
-            if (type === 'groups') {
-                chatsToShow = filteredChats.filter(chat => chat.isGroup);
-            } else if (type === 'contacts') {
-                chatsToShow = filteredChats.filter(chat => !chat.isGroup);
-            } else {
-                chatsToShow = filteredChats;
-            }
-            
-            const chatList = document.getElementById('chat-list');
-            chatList.innerHTML = renderChatList(chatsToShow);
         }
 
         function copyToClipboard(text) {
@@ -490,9 +453,6 @@ router.get('/', (req, res) => {
 
         // Load sessions on page load
         loadSessions();
-        
-        // Auto-refresh every 30 seconds
-        setInterval(loadSessions, 30000);
     </script>
 </body>
 </html>`;

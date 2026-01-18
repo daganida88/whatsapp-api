@@ -154,6 +154,7 @@ router.post('/sessions/:clientId/initialize', authenticateAPI, async (req, res) 
       timestamp: new Date().toISOString()
     });
   } catch (error) {
+    console.error(`[SESSION-INIT] Error:`, error);
     res.status(400).json({
       error: true,
       message: error.message,
@@ -171,6 +172,7 @@ router.get('/sessions/:clientId/qr', (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
+    console.error(`[SESSION-QR] Error:`, error);
     res.status(404).json({
       error: true,
       message: error.message,
@@ -184,20 +186,21 @@ router.get('/sessions/:clientId/status', (req, res) => {
   try {
     const client = req.client;
     const clientReady = req.clientReady;
-    
+
     const sessionInfo = {
       exists: true,
       ready: clientReady && client.info ? true : false,
       info: client.info || null,
       status: clientReady ? 'ready' : 'initializing'
     };
-    
+
     res.json({
       success: true,
       ...sessionInfo,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
+    console.error(`[SESSION-STATUS] Error:`, error);
     res.status(500).json({
       error: true,
       message: error.message,
@@ -215,6 +218,7 @@ router.post('/sessions/:clientId/logout', authenticateAPI, async (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
+    console.error(`[SESSION-LOGOUT] Error:`, error);
     res.status(404).json({
       error: true,
       message: error.message,
@@ -228,7 +232,7 @@ router.get('/sessions', (req, res) => {
   try {
     const client = req.client;
     const clientReady = req.clientReady;
-    
+
     const sessionInfo = {
       exists: true,
       ready: clientReady && client.info ? true : false,
@@ -246,6 +250,7 @@ router.get('/sessions', (req, res) => {
       timestamp: new Date().toISOString()
     });
   } catch (error) {
+    console.error(`[SESSIONS] Error:`, error);
     res.status(500).json({
       error: true,
       message: error.message,
@@ -254,14 +259,14 @@ router.get('/sessions', (req, res) => {
   }
 });
 
-// Get chats (including groups) for a session
+// Get groups for a session (only groups, not individual chats)
 router.get('/sessions/:clientId/chats', async (req, res) => {
   try {
-    console.log(`[CHATS] Loading chats for session: ${req.params.clientId}`);
+    console.log(`[CHATS] Loading groups for session: ${req.params.clientId}`);
     const { clientId } = req.params;
     const client = req.client;
     const clientReady = req.clientReady;
-    
+
     if (!client || !clientReady || !client.info) {
       console.log(`[CHATS] Client is not ready`);
       return res.status(400).json({
@@ -272,35 +277,37 @@ router.get('/sessions/:clientId/chats', async (req, res) => {
     }
 
     console.log(`[CHATS] Getting chats...`);
-    
+
     // Add timeout to prevent hanging
     const timeoutPromise = new Promise((_, reject) => {
       setTimeout(() => reject(new Error('getChats() timeout after 30 seconds')), 30000);
     });
-    
+
     const chats = await Promise.race([
       client.getChats(),
       timeoutPromise
     ]);
-    
+
     console.log(`[CHATS] Retrieved ${chats.length} chats`);
-    
-    const formattedChats = chats.map(chat => ({
+
+    // Filter only groups
+    const groups = chats.filter(chat => chat.isGroup);
+
+    const formattedGroups = groups.map(chat => ({
       id: chat.id._serialized,
       name: chat.name || 'No Name',
-      isGroup: chat.isGroup,
-      participants: chat.isGroup ? chat.participants?.length || 0 : 1,
+      isGroup: true,
+      participants: chat.participants?.length || 0,
       lastMessage: chat.lastMessage?.body?.substring(0, 50) || 'No messages',
       timestamp: chat.timestamp
     }));
 
-    console.log(`[CHATS] Formatted ${formattedChats.length} chats, ${formattedChats.filter(c => c.isGroup).length} groups`);
+    console.log(`[CHATS] Returning ${formattedGroups.length} groups`);
 
     res.json({
       success: true,
-      chats: formattedChats,
-      groups: formattedChats.filter(chat => chat.isGroup),
-      contacts: formattedChats.filter(chat => !chat.isGroup),
+      chats: formattedGroups,
+      groups: formattedGroups,
       timestamp: new Date().toISOString()
     });
   } catch (error) {
@@ -320,9 +327,12 @@ router.post('/send-text', authenticateAPI, validateBody(textMessageSchema), vali
   try {
     const { phone, message, message_id_to_reply } = req.body;
     const client = req.client;
-    
+
+    console.log(`[SEND-TEXT] Request - Phone: ${phone}, ReplyTo: ${message_id_to_reply || 'none'}`);
+
     // Format phone number
     const chatId = phone.includes('@') ? phone : `${phone}@c.us`;
+    console.log(`[SEND-TEXT] Formatted chatId: ${chatId}`);
     
     let result;
     
@@ -346,6 +356,7 @@ router.post('/send-text', authenticateAPI, validateBody(textMessageSchema), vali
       }
     });
   } catch (error) {
+    console.error(`[SEND-TEXT] Error:`, error);
     res.status(500).json({
       error: true,
       message: 'Failed to send text message',
