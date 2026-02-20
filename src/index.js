@@ -88,28 +88,23 @@ function getBaseClientConfig() {
         ],
         executablePath: process.env.CHROME_BIN || '/usr/bin/chromium-browser'
     },
-    webVersionCache: {
-      type: 'remote',
-      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
-  }
-
-    // 4. Web Version
-    // I have commented this out. Using a hardcoded version is the #1 cause
-    // of "Context Destroyed" loops when WhatsApp updates their server.
-    // Let the library fetch the latest compatible version automatically.
-    /*
-    webVersionCache: {
-      type: 'remote',
-      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
-    }
-    */
+    // webVersionCache removed — the remote URL for 2.2412.54 is a 404.
+    // Let whatsapp-web.js fetch the latest compatible version automatically.
   };
 }
 
 let client;
 
 async function createClient() {
+  console.log('🚀 Creating WhatsApp client...');
   const clientConfig = getBaseClientConfig();
+
+  // Log the webVersionCache config for debugging
+  if (clientConfig.webVersionCache) {
+    console.log(`🔍 webVersionCache: type=${clientConfig.webVersionCache.type}, remotePath=${clientConfig.webVersionCache.remotePath}`);
+  } else {
+    console.log('🔍 webVersionCache: not set (using library default)');
+  }
 
   // Handle proxy configuration with anonymization
   if (process.env.PROXY_SERVER) {
@@ -131,29 +126,40 @@ async function createClient() {
 
   client = new Client(clientConfig);
   attachClientHandlers(client);
-  client.initialize();
-  startWatchdog(); 
+  console.log('🔍 Calling client.initialize()...');
+  client.initialize().catch(err => {
+    console.error('❌ client.initialize() threw:', err.message);
+    console.error(err.stack);
+  });
+  startWatchdog();
 }
 
 function guardPage(page) {
+  console.log('🛡️ guardPage: Attaching page/browser error handlers');
+
   page.on('error', err => {
-    console.error('Puppeteer page error:', err);
-    scheduleRestart();x
+    console.error('🛡️ Puppeteer page crashed:', err.message);
+    scheduleRestart();
   });
 
   page.on('pageerror', err => {
-    console.error('Page JS error:', err);
-    // usually not fatal, but you can log it
+    console.warn('🛡️ Page JS error (non-fatal):', err.message);
   });
 
   page.on('close', () => {
-    console.warn('Puppeteer page was closed');
+    console.warn('🛡️ Puppeteer page was closed unexpectedly');
     scheduleRestart();
+  });
+
+  page.on('console', msg => {
+    if (msg.type() === 'error') {
+      console.error('🛡️ Browser console error:', msg.text());
+    }
   });
 
   const browser = page.browser();
   browser.on('disconnected', () => {
-    console.warn('Browser disconnected');
+    console.warn('🛡️ Browser process disconnected');
     scheduleRestart();
   });
 }
@@ -188,50 +194,44 @@ function startWatchdog() {
 }
 
 function attachClientHandlers(client) {
+  const startTime = Date.now();
+  const ts = () => `[+${((Date.now() - startTime) / 1000).toFixed(1)}s]`;
+
   client.on('ready', () => {
-    console.log('✅ WhatsApp client is ready!');
+    console.log(`${ts()} ✅ WhatsApp client is ready!`);
     clientReady = true;
     const page = client.pupPage;
     guardPage(page);
     startGroupPurge(client)
     startAutoPurge(client);
-
-    // protectNavigation(page);
-      
   });
 
   client.on('disconnected', reason => {
-    console.warn('Client disconnected:', reason);
+    console.warn(`${ts()} ⚠️ Client disconnected: ${reason}`);
     clientReady = false;
-    // if reason is 'LOGOUT', you'll likely need a new QR
-    // but for crashes, just restart
     scheduleRestart();
   });
 
   client.on('auth_failure', msg => {
-    console.error('❌ Authentication failed:', msg);
-    // don't auto-delete auth here unless you really want a fresh QR
+    console.error(`${ts()} ❌ Authentication failed: ${msg}`);
   });
 
-  // Loading screen handler
   client.on('loading_screen', (percent, message) => {
-    console.log('⏳ Loading screen:', percent + '%', message);
+    console.log(`${ts()} ⏳ Loading screen: ${percent}% ${message}`);
   });
 
-  // State change handler
   client.on('change_state', state => {
-    console.log('🔄 Client state changed:', state);
+    console.log(`${ts()} 🔄 Client state changed: ${state}`);
   });
 
-  // QR Code event
   client.on('qr', (qr) => {
-    console.log('📱 QR Code received! Scan with WhatsApp:');
+    console.log(`${ts()} 📱 QR Code received! Scan with WhatsApp:`);
     qrcodeTerminal.generate(qr, { small: true });
   });
 
-  // Authentication success
   client.on('authenticated', () => {
-    console.log('🔐 Authenticated successfully!');
+    console.log(`${ts()} 🔐 Authenticated successfully!`);
+    console.log(`${ts()} 🔍 Waiting for ready event... (if this hangs, the WA Web page failed to load)`);
   });
 
 
@@ -385,12 +385,18 @@ function attachClientHandlers(client) {
 let restartTimer = null;
 
 function scheduleRestart() {
-  if (restartTimer) return;
+  if (restartTimer) {
+    console.log('🔄 Restart already scheduled, skipping duplicate');
+    return;
+  }
+  console.log('🔄 Scheduling client restart in 2 seconds...');
   restartTimer = setTimeout(async () => {
     restartTimer = null;
+    console.log('🔄 Destroying old client...');
     try {
       await client.destroy().catch(() => {});
     } catch (_) {}
+    console.log('🔄 Creating new client...');
     createClient();
   }, 2000);
 }
