@@ -176,6 +176,19 @@ function guardPage(page) {
     console.warn('🛡️ [LIFECYCLE] Browser process disconnected');
     scheduleRestart('browser_disconnected');
   });
+
+  // PRIMARY ZOMBIE FIX: Detect WhatsApp Web internal SPA navigations.
+  // When WhatsApp Web navigates internally, the Puppeteer execution context
+  // is destroyed and recreated. The library re-injects Store, but Node.js-side
+  // message event listeners are silently dropped — causing the zombie state.
+  // See: https://github.com/wwebjs/whatsapp-web.js/issues/127049
+  const mainFrame = page.mainFrame();
+  page.on('framenavigated', (frame) => {
+    if (frame !== mainFrame) return; // Ignore iframe navigations
+    const url = frame.url();
+    console.log(`🔄 [NAVIGATION] Main frame navigated to ${url} — triggering restart`);
+    scheduleRestart('navigation');
+  });
 }
 
 let watchdogInterval = null;
