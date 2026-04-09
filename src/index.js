@@ -482,13 +482,72 @@ const authenticateAPI = (req, res, next) => {
 app.use('/api', messageRoutes);
 app.use('/ui', uiRoutes);
 
-// Health check endpoint (protected)
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    version: process.env.npm_package_version || '1.0.0',
-  });
+// Health check endpoint — Docker uses this to decide whether to restart the container.
+// Returns 200 only if WhatsApp is fully connected; 503 otherwise.
+app.get('/health', async (req, res) => {
+  const timestamp = new Date().toISOString();
+
+  // Check 1: Has the client emitted 'ready'?
+  if (!clientReady) {
+    console.log('[HEALTH] FAIL check=clientReady result=false — returning 503');
+    return res.status(503).json({
+      status: 'unhealthy',
+      check: 'clientReady',
+      clientReady: false,
+      timestamp
+    });
+  }
+
+  // Check 2: Does the session have authenticated user info?
+  if (!client || !client.info) {
+    console.log('[HEALTH] FAIL check=clientInfo result=missing — returning 503');
+    return res.status(503).json({
+      status: 'unhealthy',
+      check: 'clientInfo',
+      hasInfo: false,
+      timestamp
+    });
+  }
+
+  // Check 3: Does WhatsApp Web report CONNECTED? (5s timeout)
+  try {
+    const stateTimeout = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error('Timeout')), 5000)
+    );
+    const state = await Promise.race([
+      client.getState(),
+      stateTimeout
+    ]);
+
+    if (state !== 'CONNECTED') {
+      console.log(`[HEALTH] FAIL check=getState result=${state} — returning 503`);
+      return res.status(503).json({
+        status: 'unhealthy',
+        check: 'getState',
+        state: state,
+        timestamp
+      });
+    }
+
+    // All checks passed
+    const uptime = clientCreatedAt ? formatUptime(Date.now() - clientCreatedAt) : 'n/a';
+    res.json({
+      status: 'ok',
+      state,
+      uptime,
+      messages: messageCount,
+      timestamp,
+      version: process.env.npm_package_version || '1.0.0'
+    });
+  } catch (err) {
+    console.log('[HEALTH] FAIL check=getState result=TIMEOUT — returning 503');
+    return res.status(503).json({
+      status: 'unhealthy',
+      check: 'getState',
+      error: 'timeout',
+      timestamp
+    });
+  }
 });
 
 // WhatsApp connection status endpoint (protected)
