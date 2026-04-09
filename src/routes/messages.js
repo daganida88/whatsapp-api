@@ -563,13 +563,13 @@ router.post('/forward-message', authenticateAPI, async (req, res) => {
 });
 
 // Revoke (delete for everyone) a message by ID
-router.post('/message/:messageId/revoke', authenticateAPI, async (req, res) => {
-  const { messageId } = req.params;
+router.post('/revoke-message', authenticateAPI, async (req, res) => {
+  const { messageId } = req.body;
 
   console.log(`[REVOKE] Starting revoke request - MessageId: ${messageId}`);
 
   if (!messageId) {
-    return res.status(400).json({ error: true, message: 'Missing required param: messageId' });
+    return res.status(400).json({ error: true, message: 'Missing required field: messageId' });
   }
 
   const client = req.client;
