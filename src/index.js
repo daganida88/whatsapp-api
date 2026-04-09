@@ -98,6 +98,9 @@ let messageCount = 0;
 let clientCreatedAt = null;
 let lastRestartReason = null;
 let heartbeatInterval = null;
+let selfCheckInterval = null;
+let consecutiveHealthFailures = 0;
+const MAX_HEALTH_FAILURES = 3;
 
 function formatUptime(ms) {
   const seconds = Math.floor(ms / 1000);
@@ -111,6 +114,7 @@ async function createClient() {
   console.log('🚀 Creating WhatsApp client...');
   messageCount = 0;
   clientCreatedAt = Date.now();
+  consecutiveHealthFailures = 0;
   const clientConfig = getBaseClientConfig();
 
   // Log the webVersionCache config for debugging
@@ -147,6 +151,7 @@ async function createClient() {
   });
   startWatchdog();
   startHeartbeat();
+  startSelfCheck();
 }
 
 function guardPage(page) {
@@ -251,6 +256,55 @@ function startHeartbeat() {
       console.log(`💓 [HEARTBEAT] state=PROBE_FAILED clientReady=${clientReady} uptime=${uptime} messages=${messageCount}`);
     }
   }, 5 * 60 * 1000); // Every 5 minutes
+}
+
+// Self-health-check: runs the same checks as /health endpoint.
+// If health fails MAX_HEALTH_FAILURES times in a row, process.exit(1)
+// and let Docker's restart: unless-stopped bring us back.
+// This is the last resort — scheduleRestart handles internal recovery first.
+function startSelfCheck() {
+  if (selfCheckInterval) clearInterval(selfCheckInterval);
+  consecutiveHealthFailures = 0;
+
+  selfCheckInterval = setInterval(async () => {
+    // Don't check during startup — give the client time to initialize
+    if (!clientCreatedAt) return;
+    const uptimeMs = Date.now() - clientCreatedAt;
+    if (uptimeMs < 90000) return; // Skip first 90 seconds
+
+    let healthy = false;
+
+    if (clientReady && client && client.info) {
+      try {
+        const stateTimeout = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout')), 5000)
+        );
+        const state = await Promise.race([
+          client.getState(),
+          stateTimeout
+        ]);
+        healthy = (state === 'CONNECTED');
+      } catch (err) {
+        healthy = false;
+      }
+    }
+
+    if (healthy) {
+      if (consecutiveHealthFailures > 0) {
+        console.log(`🩺 [SELF-CHECK] Recovered after ${consecutiveHealthFailures} consecutive failure(s)`);
+      }
+      consecutiveHealthFailures = 0;
+    } else {
+      consecutiveHealthFailures++;
+      const uptime = clientCreatedAt ? formatUptime(Date.now() - clientCreatedAt) : 'n/a';
+      console.error(`🩺 [SELF-CHECK] Health failure ${consecutiveHealthFailures}/${MAX_HEALTH_FAILURES} — uptime=${uptime} messages=${messageCount}`);
+
+      if (consecutiveHealthFailures >= MAX_HEALTH_FAILURES) {
+        console.error(`🩺 [SELF-CHECK] ${MAX_HEALTH_FAILURES} consecutive failures — exiting process for Docker restart`);
+        process.exit(1);
+      }
+    }
+  }, 30000); // Check every 30 seconds (matches Docker healthcheck interval)
 }
 
 function attachClientHandlers(client) {
@@ -670,6 +724,7 @@ const gracefulShutdown = async () => {
   // Stop all intervals to prevent watchdog/heartbeat from firing during shutdown
   if (watchdogInterval) clearInterval(watchdogInterval);
   if (heartbeatInterval) clearInterval(heartbeatInterval);
+  if (selfCheckInterval) clearInterval(selfCheckInterval);
   if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
   try {
     // Close WhatsApp client properly
