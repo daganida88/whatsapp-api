@@ -252,7 +252,9 @@ function attachClientHandlers(client) {
   const ts = () => `[+${((Date.now() - startTime) / 1000).toFixed(1)}s]`;
 
   client.on('ready', () => {
-    console.log(`${ts()} ✅ WhatsApp client is ready!`);
+    const pushname = client.info?.pushname || 'unknown';
+    const wid = client.info?.wid?._serialized || 'unknown';
+    console.log(`${ts()} ✅ [LIFECYCLE] WhatsApp client is ready — user=${pushname} wid=${wid} lastRestart=${lastRestartReason || 'initial'}`);
     clientReady = true;
     const page = client.pupPage;
     guardPage(page);
@@ -275,7 +277,10 @@ function attachClientHandlers(client) {
   });
 
   client.on('change_state', state => {
-    console.log(`${ts()} 🔄 Client state changed: ${state}`);
+    console.log(`${ts()} 🔄 [STATE] Client state changed: ${state}`);
+    if (state === 'CONFLICT' || state === 'UNLAUNCHED' || state === 'TIMEOUT') {
+      console.warn(`${ts()} ⚠️ [STATE] Problematic state detected: ${state}`);
+    }
   });
 
   client.on('qr', (qr) => {
@@ -345,6 +350,7 @@ function attachClientHandlers(client) {
       console.log('✅ Message handling enabled');
       // Message events for debugging - only received messages
       client.on('message', async (msg) => {
+          messageCount++;
           // console.log('📨 Message received - ALL FIELDS:', JSON.stringify(msg, null, 2));
           console.log('📨 Message received:', {
               body: msg.body,
