@@ -184,8 +184,14 @@ function guardPage(page) {
   // message event listeners are silently dropped — causing the zombie state.
   // See: https://github.com/wwebjs/whatsapp-web.js/issues/127049
   const mainFrame = page.mainFrame();
+  let initialNavigation = true;
   page.on('framenavigated', (frame) => {
     if (frame !== mainFrame) return; // Ignore iframe navigations
+    if (initialNavigation) {
+      initialNavigation = false;
+      console.log(`🔄 [NAVIGATION] Ignoring initial frame navigation to ${frame.url()}`);
+      return;
+    }
     const url = frame.url();
     console.log(`🔄 [NAVIGATION] Main frame navigated to ${url} — triggering restart`);
     scheduleRestart('navigation');
@@ -661,6 +667,10 @@ app.use('*', (req, res) => {
 // Graceful shutdown
 const gracefulShutdown = async () => {
   console.log('\nReceived shutdown signal, gracefully closing WhatsApp sessions...');
+  // Stop all intervals to prevent watchdog/heartbeat from firing during shutdown
+  if (watchdogInterval) clearInterval(watchdogInterval);
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
+  if (restartTimer) { clearTimeout(restartTimer); restartTimer = null; }
   try {
     // Close WhatsApp client properly
     if (client && clientReady) {
