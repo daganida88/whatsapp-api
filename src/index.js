@@ -258,8 +258,7 @@ function attachClientHandlers(client) {
     clientReady = true;
     const page = client.pupPage;
     guardPage(page);
-    startGroupPurge(client)
-    startAutoPurge(client);
+    startGroupPurge(client);
   });
 
   client.on('disconnected', reason => {
