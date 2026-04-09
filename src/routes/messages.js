@@ -562,6 +562,50 @@ router.post('/forward-message', authenticateAPI, async (req, res) => {
   }
 });
 
+// Revoke (delete for everyone) a message by ID
+router.post('/message/:messageId/revoke', authenticateAPI, async (req, res) => {
+  const { messageId } = req.params;
+
+  console.log(`[REVOKE] Starting revoke request - MessageId: ${messageId}`);
+
+  if (!messageId) {
+    return res.status(400).json({ error: true, message: 'Missing required param: messageId' });
+  }
+
+  const client = req.client;
+
+  let message;
+  try {
+    message = await withTimeout(client.getMessageById(messageId), 10000, "Find Message");
+  } catch (err) {
+    console.error(`[REVOKE] Failed to find message: ${err.message}`);
+    return res.status(404).json({
+      error: true,
+      message: 'Could not retrieve message (Timeout or Not Found)',
+      details: err.message
+    });
+  }
+
+  if (!message) {
+    return res.status(404).json({ error: true, message: 'Message not found' });
+  }
+
+  try {
+    await withTimeout(message.delete(true), 10000, "Revoke Message");
+  } catch (err) {
+    console.error(`[REVOKE] Failed to revoke message: ${err.message}`);
+    return res.status(500).json({
+      error: true,
+      message: 'Failed to revoke message',
+      details: err.message
+    });
+  }
+
+  console.log(`[REVOKE] Message revoked successfully: ${messageId}`);
+  res.json({ success: true, messageId });
+});
+
+
 // Clear messages from a specific group
 router.post('/clear-group-messages', authenticateAPI, validateSession, async (req, res) => {
   try {
