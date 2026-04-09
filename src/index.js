@@ -94,9 +94,23 @@ function getBaseClientConfig() {
 }
 
 let client;
+let messageCount = 0;
+let clientCreatedAt = null;
+let lastRestartReason = null;
+let heartbeatInterval = null;
+
+function formatUptime(ms) {
+  const seconds = Math.floor(ms / 1000);
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  if (hours > 0) return `${hours}h${minutes}m`;
+  return `${minutes}m`;
+}
 
 async function createClient() {
   console.log('🚀 Creating WhatsApp client...');
+  messageCount = 0;
+  clientCreatedAt = Date.now();
   const clientConfig = getBaseClientConfig();
 
   // Log the webVersionCache config for debugging
