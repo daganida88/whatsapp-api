@@ -152,8 +152,8 @@ function guardPage(page) {
   console.log('🛡️ guardPage: Attaching page/browser error handlers');
 
   page.on('error', err => {
-    console.error('🛡️ Puppeteer page crashed:', err.message);
-    scheduleRestart();
+    console.error('🛡️ [LIFECYCLE] Puppeteer page crashed:', err.message);
+    scheduleRestart('page_crash');
   });
 
   page.on('pageerror', err => {
@@ -161,8 +161,8 @@ function guardPage(page) {
   });
 
   page.on('close', () => {
-    console.warn('🛡️ Puppeteer page was closed unexpectedly');
-    scheduleRestart();
+    console.warn('🛡️ [LIFECYCLE] Puppeteer page was closed unexpectedly');
+    scheduleRestart('page_closed');
   });
 
   page.on('console', msg => {
@@ -173,8 +173,8 @@ function guardPage(page) {
 
   const browser = page.browser();
   browser.on('disconnected', () => {
-    console.warn('🛡️ Browser process disconnected');
-    scheduleRestart();
+    console.warn('🛡️ [LIFECYCLE] Browser process disconnected');
+    scheduleRestart('browser_disconnected');
   });
 }
 
@@ -201,8 +201,8 @@ function startWatchdog() {
               timeout
           ]);
       } catch (error) {
-          console.error('🚨 Watchdog Alert: Browser is unresponsive/stuck. Restarting...');
-          scheduleRestart();
+          console.error('🚨 [WATCHDOG] Browser is unresponsive/stuck. Restarting...');
+          scheduleRestart('watchdog_timeout');
       }
   }, 60000); // Check every 60 seconds
 }
@@ -221,9 +221,9 @@ function attachClientHandlers(client) {
   });
 
   client.on('disconnected', reason => {
-    console.warn(`${ts()} ⚠️ Client disconnected: ${reason}`);
+    console.warn(`${ts()} ⚠️ [LIFECYCLE] Client disconnected: ${reason}`);
     clientReady = false;
-    scheduleRestart();
+    scheduleRestart('client_disconnected');
   });
 
   client.on('auth_failure', msg => {
@@ -398,19 +398,21 @@ function attachClientHandlers(client) {
 
 let restartTimer = null;
 
-function scheduleRestart() {
+function scheduleRestart(reason = 'unknown') {
   if (restartTimer) {
-    console.log('🔄 Restart already scheduled, skipping duplicate');
+    console.log(`🔄 [RESTART] Already scheduled, skipping duplicate (pending reason: ${lastRestartReason})`);
     return;
   }
-  console.log('🔄 Scheduling client restart in 2 seconds...');
+  lastRestartReason = reason;
+  const uptime = clientCreatedAt ? formatUptime(Date.now() - clientCreatedAt) : 'n/a';
+  console.log(`🔄 [RESTART] Scheduling restart in 2s — reason=${reason} uptime=${uptime} messages=${messageCount}`);
   restartTimer = setTimeout(async () => {
     restartTimer = null;
-    console.log('🔄 Destroying old client...');
+    console.log(`🔄 [LIFECYCLE] Destroying old client — reason=${reason} uptime=${uptime} messages=${messageCount}`);
     try {
       await client.destroy().catch(() => {});
     } catch (_) {}
-    console.log('🔄 Creating new client...');
+    console.log('🔄 [LIFECYCLE] Creating new client...');
     createClient();
   }, 2000);
 }
