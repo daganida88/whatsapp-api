@@ -146,6 +146,7 @@ async function createClient() {
     console.error(err.stack);
   });
   startWatchdog();
+  startHeartbeat();
 }
 
 function guardPage(page) {
@@ -196,12 +197,12 @@ let watchdogInterval = null;
 // Add this function
 function startWatchdog() {
   if (watchdogInterval) clearInterval(watchdogInterval);
-  
+
   watchdogInterval = setInterval(async () => {
       if (!clientReady || !client) return;
 
       // Create a timeout promise
-      const timeout = new Promise((_, reject) => 
+      const timeout = new Promise((_, reject) =>
           setTimeout(() => reject(new Error('Timeout')), 10000)
       );
 
@@ -218,6 +219,32 @@ function startWatchdog() {
           scheduleRestart('watchdog_timeout');
       }
   }, 60000); // Check every 60 seconds
+}
+
+function startHeartbeat() {
+  if (heartbeatInterval) clearInterval(heartbeatInterval);
+
+  heartbeatInterval = setInterval(async () => {
+    const uptime = clientCreatedAt ? formatUptime(Date.now() - clientCreatedAt) : 'n/a';
+
+    if (!clientReady || !client) {
+      console.log(`💓 [HEARTBEAT] state=NOT_READY clientReady=${clientReady} uptime=${uptime} messages=${messageCount}`);
+      return;
+    }
+
+    try {
+      const stateTimeout = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Timeout')), 5000)
+      );
+      const state = await Promise.race([
+        client.getState(),
+        stateTimeout
+      ]);
+      console.log(`💓 [HEARTBEAT] state=${state} clientReady=${clientReady} uptime=${uptime} messages=${messageCount}`);
+    } catch (err) {
+      console.log(`💓 [HEARTBEAT] state=PROBE_FAILED clientReady=${clientReady} uptime=${uptime} messages=${messageCount}`);
+    }
+  }, 5 * 60 * 1000); // Every 5 minutes
 }
 
 function attachClientHandlers(client) {
