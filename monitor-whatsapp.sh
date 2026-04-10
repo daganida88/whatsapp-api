@@ -5,6 +5,8 @@ CONTAINERS=("whatsapp-01" "whatsapp-02" "whatsapp-03")
 LOG_FILE="/var/log/whatsapp-monitor.log"
 SINCE="3m"
 
+echo "$(date '+%Y-%m-%d %H:%M:%S') Monitor check started" >> "$LOG_FILE"
+
 for container in "${CONTAINERS[@]}"; do
     # Skip if container is not running
     if ! docker inspect --format='{{.State.Running}}' "$container" 2>/dev/null | grep -q true; then
